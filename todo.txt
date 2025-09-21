@@ -1,0 +1,4 @@
+conduct tests on the services, validators, serializer, builder
+make the register, password reset views and make tests
+
+integrate the register with 3rd party apis

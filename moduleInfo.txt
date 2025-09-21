@@ -1,0 +1,115 @@
+System Structure:
+set up user login/auth, with jwt token that has 
+lots of server sharing one regional DB and has a
+cache to reduce the DB hits for token refresh
+allowing for new refresh tokens every time access
+is made new. Allows for GEO + sharding replication
+meaning nearby servers in the area get any new 
+token access refresh. And allows for updating the 
+cache/DB when old entries exsists asynchronouly thru 
+celery.
+
+Functional Requirements:
+1. User auth
+    * Register a new user with username and password
+    * Login with credentials
+    * Logout user and invalidate access/refresh tokens
+2. Token Management
+    * Issue JWT access token upon successful login
+    * issue and rorate refresh token each access is refreshed
+    * Validate tokens on API requests 
+    * Support token revocation
+3. Cache Management
+    * Store tokens in cache for quick validation
+    * update cache asynchronouly when tokens are rotated
+    * clean up expired tokens automatically 
+4. Mutli-Region Support
+    * route user requests to nearest regional server/DB 
+    * replicate refresh tokens updates asynchronouly to nearby regions
+    * handle cross-regions refreshes gracefully (via replication or home-region)
+5. Database Operations
+    * Maintain a regional DB per region as a source of truth
+    * support writes/updates for token rotations
+    * keep DB in sycn with cache (asynchronouly if needed)
+6. Loggin & Monitoring
+    * Log login attemps, token refresh events, cache hits/misses
+    * provide metrics on token usage, DB load, and cache efficiency.
+
+Non-Functional Requirements:
+1. Performance
+    * Access token validation should be stateless and fast, without DB hits
+    * refresh token validation should have low latency via cache. with DB fallback
+2. Scalability
+    * System must handle millions of users per region
+    * Reginoal DB and servers should scale horizontally as user load grows
+3. Availability
+    * Each region should be highly available, serving local users even if another region fails
+    * system should tolerate networks partitions (CAP trade-offs handled by replication)
+4. Consistency 
+    * Access tokens are stateless --> no cosistency needed
+    * Refresh tokens replicated asynchronouly --> eventual consistency accpeted 
+5. Security
+    * JWTs signed and verified to prevent tampering 
+    * Refresh tokens roated to reduce risk if comprised
+    * Sensitive user info stored securely (hashed or encrypted)
+6. Maintainability
+    * Modular architecture to allow adding new regions or databases
+    * Celery workers manage asynchronouly tasks without blocking main API
+
+Use Cases:
+1. User Login
+Actors: User, Auth Server, Regional DB, Cache
+Flow:
+    * User sends credentials to nearest server
+    * Server validates against cahce/DB
+    * if valid, server issues access token + refresh token
+    * Refresh, token stored in DB and cached
+2. Access API with JWT
+Actors: User, API Server
+Flow:
+    * User sends request with access token
+    * API server verifies token locally (no DB hit)
+    * if valid -> serve request
+    * if expired -> prompt refresh Flow
+3. Refresh Access Token
+Actors: User, Auth Server, Cache, Regional DB, Celery Worker
+Flow: 
+    * User sends refresh token to server
+    * Server checks cache; if missing, checks DB
+    * If valid -> issue new access token and rorate refresh token
+    * Update cahce and replicate token to nearby regions asynchronouly
+4. Logout / Token revocation
+Actors: User, Auth Server, DB, Cache
+Flow:
+    * User logs outs
+    * Server invalidates refresh token in DB and cache
+    * propagate invalidation to replicated regions asynchronouly
+5. Cross-Region User
+Actors: User travelling, Regional DBs, Replication System
+Flow: 
+    * User connects from new region
+    * Server checks local DB cache:
+        * if refresh exists -> validates locally
+        * if not -> proxy to user's home region or use replicated token
+        * New access token issued locally
+
+Recommended Order Recap
+
+DB models / schema
+
+Write tests for core behaviors
+
+Implement core functionality (DB-only login, token handling)
+
+Add cache layer (Redis) for token validation
+
+Add Celery for async cleanup / replication
+
+Add multi-region / sharding
+
+Add logging, metrics, and monitoring
+
+
+
+
+
