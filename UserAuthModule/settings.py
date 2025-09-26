@@ -157,13 +157,25 @@ CACHES = {
 SESSION_ENGINE = "django.contrib.sessions.backends.cache"
 SESSION_CACHE_ALIAS = "default"
 
+
+DATABASE_ROUTERS = ['api.db_routers.PrimaryReplicaRouter']
+
+
 DATABASES = {
-    'default': {
+    'default': { # This will be our WRITE database ✍️
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DATABASE_NAME', 'mydb'),
-        'USER': os.environ.get('DATABASE_USER', 'myuser'),
-        'PASSWORD': os.environ.get('DATABASE_PASSWORD', 'mypass'),
-        'HOST': os.environ.get('DATABASE_HOST', 'db'),
+        'NAME': os.environ.get('DATABASE_NAME'),
+        'USER': os.environ.get('DATABASE_USER'),
+        'PASSWORD': os.environ.get('DATABASE_PASSWORD'),
+        'HOST': os.environ.get('WRITER_DB_HOST'), # The global cluster's writer endpoint
+        'PORT': os.environ.get('DATABASE_PORT', 5432),
+    },
+    'read_replica': { # This will be our READ database 📖
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.environ.get('DATABASE_NAME'),
+        'USER': os.environ.get('DATABASE_USER'),
+        'PASSWORD': os.environ.get('DATABASE_PASSWORD'),
+        'HOST': os.environ.get('READER_DB_HOST'), # The regional cluster's reader endpoint
         'PORT': os.environ.get('DATABASE_PORT', 5432),
     }
 }
