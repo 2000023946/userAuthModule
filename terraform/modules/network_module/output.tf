@@ -1,27 +1,38 @@
-# modules/network/outputs.tf
-
 output "vpc_id" {
-  description = "The ID of the created VPC."
+  description = "The ID of the VPC."
   value       = aws_vpc.main.id
 }
 
-output "private_subnet_ids" {
-  description = "A list of the private subnet IDs."
-  value       = [for s in aws_subnet.private : s.id]
+output "public_subnet_ids" {
+  description = "List of public subnet IDs."
+  # Correct syntax for a resource created with for_each
+  value       = values(aws_subnet.public)[*].id
 }
 
-output "app_sg_id" {
-  description = "The ID of the application security group."
+output "private_subnet_ids" {
+  description = "List of private subnet IDs."
+  # Correct syntax for a resource created with for_each
+  value       = values(aws_subnet.private)[*].id
+}
+
+output "load_balancer_sg_id" {
+  description = "The ID of the load balancer's security group."
+  value       = aws_security_group.lb_sg.id
+}
+
+output "app_server_sg_id" {
+  description = "The ID of the app server's security group."
   value       = aws_security_group.app_sg.id
 }
 
 output "rds_sg_id" {
-  description = "The ID of the database security group."
+  description = "The ID of the RDS security group."
+  # FIX: Your resource name is "rds_sg", not "rds"
   value       = aws_security_group.rds_sg.id
 }
 
-# --- Add this new output ---
 output "cache_sg_id" {
-  description = "The ID of the security group for the ElastiCache cluster."
+  description = "The ID of the ElastiCache security group."
+  # FIX: Your resource name is "cache_sg", not "cache"
   value       = aws_security_group.cache_sg.id
 }

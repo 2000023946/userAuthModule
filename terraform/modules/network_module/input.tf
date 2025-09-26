@@ -27,3 +27,11 @@ variable "ssh_ingress_cidr" {
   type        = list(string)
   default     = ["0.0.0.0/0"] # WARNING: Should be locked down to your IP.
 }
+
+# --- Add this new variable ---
+
+variable "public_subnet_cidrs" {
+  description = "A list of CIDR blocks for the public subnets."
+  type        = list(string)
+  # Example: ["10.0.0.0/24", "10.0.1.0/24"]
+}
