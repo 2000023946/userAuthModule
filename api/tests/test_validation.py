@@ -1,4 +1,4 @@
-from django.test import TestCase
+from rest_framework.test import APITransactionTestCase
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
 from rest_framework import status
@@ -6,7 +6,8 @@ from unittest.mock import patch, MagicMock
 
 User = get_user_model()
 
-class TokenValidationViewTests(TestCase):
+class TokenValidationViewTests(APITransactionTestCase):
+    databases = '__all__'
     def setUp(self):
         self.client = APIClient()
         self.user = User.objects.create_user(email="user@example.com", password="Test1234", username='mon')

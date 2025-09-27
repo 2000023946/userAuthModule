@@ -11,9 +11,15 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 from pathlib import Path
+import sys
+import os
+from dotenv import load_dotenv
 
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+if 'test' in sys.argv:
+    print('system is testing')
+    load_dotenv(BASE_DIR / '.env.test')
 
 
 # Quick-start development settings - unsuitable for production
@@ -141,9 +147,20 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'api.CustomUser'
-import os
 
-REDIS_HOST = os.environ.get('REDIS_HOST', 'redis')
+
+import os
+from pathlib import Path
+
+# Build paths inside the project like this: BASE_DIR / 'subdir'.
+# This is needed for the default SQLite database configuration.
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+# --- CACHE AND SESSION CONFIGURATION ---
+# Redis is now configured as the default cache and session backend.
+# This improves performance by storing session data in memory.
+REDIS_HOST = os.environ.get('REDIS_HOST', 'localhost')
 REDIS_PORT = int(os.environ.get('REDIS_PORT', 6379))
 
 CACHES = {
@@ -157,13 +174,102 @@ CACHES = {
 SESSION_ENGINE = "django.contrib.sessions.backends.cache"
 SESSION_CACHE_ALIAS = "default"
 
+
+# --- DATABASE CONFIGURATION ---
+# The complex PostgreSQL primary/replica setup is restored below.
+# A TEST configuration has been added to handle the database router
+# during testing.
+
+DATABASE_ROUTERS = ['api.db_routers.PrimaryReplicaRouter']
+
+
 DATABASES = {
-    'default': {
+    'default': { # This will be our WRITE database ✍️
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DATABASE_NAME', 'mydb'),
-        'USER': os.environ.get('DATABASE_USER', 'myuser'),
-        'PASSWORD': os.environ.get('DATABASE_PASSWORD', 'mypass'),
-        'HOST': os.environ.get('DATABASE_HOST', 'db'),
+        'NAME': os.environ.get('DATABASE_NAME'),
+        'USER': os.environ.get('DATABASE_USER'),
+        'PASSWORD': os.environ.get('DATABASE_PASSWORD'),
+        'HOST': os.environ.get('WRITER_DB_HOST'),
         'PORT': os.environ.get('DATABASE_PORT', 5432),
+    },
+    'read_replica': { # This will be our READ database 📖
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.environ.get('DATABASE_NAME'),
+        'USER': os.environ.get('DATABASE_USER'),
+        'PASSWORD': os.environ.get('DATABASE_PASSWORD'),
+        'HOST': os.environ.get('READER_DB_HOST'),
+        'PORT': os.environ.get('DATABASE_PORT', 5432),
+        'TEST': {
+            # This is the crucial part for testing!
+            # It tells Django that during tests, any queries meant for 'read_replica'
+            # should be sent to the 'default' test database instead.
+            'MIRROR': 'default',
+        }
     }
 }
+
+
+
+
+# import os
+# from pathlib import Path
+
+# # Build paths inside the project like this: BASE_DIR / 'subdir'.
+# # This is needed for the default SQLite database configuration.
+# BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+# # --- CACHE AND SESSION CONFIGURATION ---
+# # Redis is now configured as the default cache and session backend.
+# # This improves performance by storing session data in memory.
+# REDIS_HOST = os.environ.get('REDIS_HOST', 'localhost')
+# REDIS_PORT = int(os.environ.get('REDIS_PORT', 6379))
+
+# CACHES = {
+#     "default": {
+#         "BACKEND": "django_redis.cache.RedisCache",
+#         "LOCATION": f"redis://{REDIS_HOST}:{REDIS_PORT}/1",
+#         "OPTIONS": {"CLIENT_CLASS": "django_redis.client.DefaultClient"},
+#     }
+# }
+
+# SESSION_ENGINE = "django.contrib.sessions.backends.cache"
+# SESSION_CACHE_ALIAS = "default"
+
+
+# # --- DATABASE CONFIGURATION ---
+# # The complex PostgreSQL primary/replica setup has been replaced with
+# # Django's default SQLite configuration. The database router is also
+# # commented out as it is not needed for a single database.
+
+# # DATABASE_ROUTERS = ['api.db_routers.PrimaryReplicaRouter']
+
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.sqlite3',
+#         'NAME': BASE_DIR / 'db.sqlite3',
+#     }
+# }
+
+
+# # Your previous PostgreSQL configuration is saved below for your reference.
+# #
+# # DATABASES = {
+# #     'default': { # This was your WRITE database ✍️
+# #         'ENGINE': 'django.db.backends.postgresql',
+# #         'NAME': os.environ.get('DATABASE_NAME'),
+# #         'USER': os.environ.get('DATABASE_USER'),
+# #         'PASSWORD': os.environ.get('DATABASE_PASSWORD'),
+# #         'HOST': os.environ.get('WRITER_DB_HOST'), # The global cluster's writer endpoint
+# #         'PORT': os.environ.get('DATABASE_PORT', 5432),
+# #     },
+# #     'read_replica': { # This was your READ database 📖
+# #         'ENGINE': 'django.db.backends.postgresql',
+# #         'NAME': os.environ.get('DATABASE_NAME'),
+# #         'USER': os.environ.get('DATABASE_USER'),
+# #         'PASSWORD': os.environ.get('DATABASE_PASSWORD'),
+# #         'HOST': os.environ.get('READER_DB_HOST'), # The regional cluster's reader endpoint
+# #         'PORT': os.environ.get('DATABASE_PORT', 5432),
+# #     }
+# # }
+

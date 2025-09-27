@@ -1,0 +1,30 @@
+# This file configures the pre-commit framework.
+# It tells git which linters and formatters to run before a commit is made.
+# See https://pre-commit.com for more information
+
+repos:
+  # This section defines a repository containing pre-commit hooks.
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  # Pin to a specific version for consistent results.
+  rev: v4.6.0
+  hooks:
+    # Checks for files that have giant conflict markers.
+  - id: check-merge-conflict
+    # Checks for common YAML syntax errors.
+  - id: check-yaml
+    # Trims trailing whitespace.
+  - id: trailing-whitespace
+
+  # This section adds the Black code formatter for Python.
+- repo: https://github.com/psf/black
+  rev: 24.8.0
+  hooks:
+  - id: black
+    # Specify the Python version your project uses for more accurate formatting.
+    language_version: python3.12
+
+  # This section adds the Flake8 linter for Python.
+- repo: https://github.com/pycqa/flake8
+  rev: 7.1.0
+  hooks:
+  - id: flake8
