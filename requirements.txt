@@ -1,6 +1,12 @@
-Django
+django
 djangorestframework
 djangorestframework-simplejwt
 django-redis
 psycopg2-binary
 requests
+
+
+coverage
+
+flake8
+black
