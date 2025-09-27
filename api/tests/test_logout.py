@@ -1,5 +1,5 @@
 from django.urls import reverse
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase, APITransactionTestCase
 from rest_framework import status
 from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -9,7 +9,8 @@ from ..hasher import hash_token
 from unittest.mock import call, patch
 User = get_user_model()
 
-class LogoutViewTests(APITestCase):
+class LogoutViewTests(APITransactionTestCase):
+    databases = '__all__'
     def setUp(self):
         self.user = User.objects.create_user(email="testuser@example.com", password="TestPass123!", username='uaoi,ma')
         self.url = reverse("logout")  # make sure your URL name is "logout"

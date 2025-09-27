@@ -1,9 +1,10 @@
 from django.urls import reverse
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase, APITransactionTestCase
 from api.models import CustomUser
 
-class PasswordResetTests(APITestCase):
+class PasswordResetTests(APITransactionTestCase):
+    databases = '__all__'
     def setUp(self):
         # Clear session
         session = self.client.session
