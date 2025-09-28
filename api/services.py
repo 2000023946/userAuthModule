@@ -1,16 +1,25 @@
+import requests  # type: ignore
+from abc import ABC, abstractmethod  # import before using
 
-from .validators import *
-import requests # type: ignore
+from .validators import (
+    DefaultValidator,
+    PasswordRepeatValidator,
+    PasswordValidator,
+    EmailValidator,
+    EmailResetValidator,
+    UsernameValidator,
+    UserRegistrationValidator,
+    PasswordResetValidator,
+)
+
 
 class RegistrationService:
-
-
-    def get_data(self, dataObject):
-        # If dataObject has a `session` attribute, use request.data
-        if hasattr(dataObject, 'session'):
-            return getattr(dataObject, 'data', {})  # DRF Request stores data in `.data`
+    def get_data(self, data_object):
+        # If data_object has a `session` attribute, use request.data
+        if hasattr(data_object, "session"):
+            return getattr(data_object, "data", {})  # DRF Request stores data in `.data`
         # If it's a dict-like object, just return it
-        return dataObject
+        return data_object
 
     def execute(self, request, builder, state):
         """
@@ -20,12 +29,11 @@ class RegistrationService:
           {"errors": {state_name: error_msg}}
           {"message": "some message"}
         """
-
         state = self.get_starting_state(request, state)
         errors = {}
 
         for key, value in self.get_data(request).items():
-            print(value, 'value')
+            print(value, "value")
             try:
                 state = state.handle(key, value, builder)
                 self.save(request, state)
@@ -33,7 +41,7 @@ class RegistrationService:
                 errors[state.name] = str(e)
                 break
 
-            if state.is_finish():# final overall validation
+            if state.is_finish():  # final overall validation
                 try:
                     state.handle(key, value, builder)
                 except ValueError as e:
@@ -43,7 +51,6 @@ class RegistrationService:
                 created = builder.build()
                 return {"create": created}
 
-
         if errors:
             return {"errors": errors}
 
@@ -51,11 +58,11 @@ class RegistrationService:
         return {"message": f"Continue at state {state.name}"}
 
     def save(self, request, state):
-        if hasattr(request, 'session'):
+        if hasattr(request, "session"):
             request.session["state"] = state.name
 
     def get_starting_state(self, request, state):
-        if not hasattr(request, 'session') or "state" not in request.session:
+        if not hasattr(request, "session") or "state" not in request.session:
             return state
         state_to_start = request.session["state"]
         current = state
@@ -64,72 +71,76 @@ class RegistrationService:
         return current or state
 
 
-
-
 class ServiceStateFactory(ABC):
     @abstractmethod
     def build(self):
+        """Return a configured state chain."""
         pass
+
 
 class RegistrationFactory(ServiceStateFactory):
     def build(self):
-        return UsernameState() \
-                .then_handle(EmailState()) \
-                .then_handle(PasswordState()) \
-                .then_handle(PasswordRepeatState()) \
-                .then_handle(CompleteRegistrationState())
-    
+        return (
+            UsernameState()
+            .then_handle(EmailState())
+            .then_handle(PasswordState())
+            .then_handle(PasswordRepeatState())
+            .then_handle(CompleteRegistrationState())
+        )
+
+
 class PasswordResetFactory(ServiceStateFactory):
     def build(self):
-        return EmailExistsState() \
-                .then_handle(PasswordState()) \
-                .then_handle(PasswordRepeatState()) \
-                .then_handle(CompletePasswordResetState())
-    
+        return (
+            EmailExistsState()
+            .then_handle(PasswordState())
+            .then_handle(PasswordRepeatState())
+            .then_handle(CompletePasswordResetState())
+        )
+
+
 class ThirdPartyRegistrationFactory(ServiceStateFactory):
     def build(self):
-        return EmailState() \
-                .then_handle(CompleteState())
-    
+        return EmailState().then_handle(CompleteState())
+
+
 class LoginFactory(ServiceStateFactory):
     def build(self):
-        return EmailExistsState() \
-                .then_handle(PasswordState()) \
-                .then_handle(CompleteLoginState())
-    
+        return (
+            EmailExistsState()
+            .then_handle(PasswordState())
+            .then_handle(CompleteLoginState())
+        )
+
+
 class ThirdPartyLoginFactory(ServiceStateFactory):
     def build(self):
-        return EmailExistsState() \
-                .then_handle(CompleteState())
-    
+        return EmailExistsState().then_handle(CompleteState())
 
-
-from abc import ABC
 
 class State(ABC):
     validator = DefaultValidator()
+
     def __init__(self):
         self.next = None
 
     def handle(self, key, value, builder):
-        # 👇 pass both current data and accumulated data to validator
+        # Pass both current data and accumulated data to validator
         if self.validator.validate(value, builder.data):
             builder.register(key, value)
             return self.next
         return self
-
 
     def then_handle(self, next_state):
         """
         Attach `next_state` at the end of the chain.
         Returns self (head of the chain) so we can chain safely.
         """
-        # find the tail of the current chain
         tail = self
         while tail.next is not None:
             tail = tail.next
         tail.next = next_state
-        return self  # always return the head
+        return self
 
     def is_finish(self):
         return False
@@ -140,42 +151,48 @@ class State(ABC):
         return isinstance(other, State) and other.name == self.name
 
 
-
 class PasswordRepeatState(State):
     validator = PasswordRepeatValidator()
-    name = 'PasswordRepeat'
+    name = "PasswordRepeat"
+
 
 class PasswordState(State):
     validator = PasswordValidator()
-    name = 'Password'
-    
+    name = "Password"
+
+
 class EmailState(State):
     validator = EmailValidator()
-    name = 'Email'
+    name = "Email"
+
 
 class EmailExistsState(State):
     validator = EmailResetValidator()
-    name = 'Email'
-    
+    name = "Email"
+
+
 class UsernameState(State):
     validator = UsernameValidator()
-    name = 'Username'
-    
+    name = "Username"
+
 
 class CompleteState(State):
     def is_finish(self):
         return True
 
+
 class CompleteRegistrationState(CompleteState):
-    name = 'CompleteRegistration'
+    name = "CompleteRegistration"
     validator = UserRegistrationValidator()
 
+
 class CompletePasswordResetState(CompleteState):
-    name = 'CompletePasswordReset'
+    name = "CompletePasswordReset"
     validator = PasswordResetValidator()
 
+
 class CompleteLoginState(CompleteState):
-    name = 'CompleteLogin'
+    name = "CompleteLogin"
 
 
 class ThirdPartyStrategy(ABC):
@@ -197,20 +214,12 @@ class GoogleStrategy(ThirdPartyStrategy):
             "username": payload.get("name", ""),
         }
 
+
 class ThirdPartyStrategySingleton:
     strategies = {
-        'google': GoogleStrategy,
+        "google": GoogleStrategy,
     }
 
     @classmethod
     def get_user_info(cls, provider, token):
         return cls.strategies[provider]().get_user_info(token)
-    
-    
-    
-
-
-    
-        
-
-        

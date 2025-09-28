@@ -1,5 +1,9 @@
 # api/models.py
-from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.contrib.auth.models import (
+    AbstractBaseUser,
+    BaseUserManager,
+    PermissionsMixin,
+)
 from django.db import models
 from django.utils import timezone
 
@@ -17,12 +21,12 @@ class CustomUserManager(BaseUserManager):
         return user
 
     def create_superuser(self, email, username, password=None, **extra_fields):
-        extra_fields.setdefault('is_staff', True)
-        extra_fields.setdefault('is_superuser', True)
-        if extra_fields.get('is_staff') is not True:
-            raise ValueError('Superuser must have is_staff=True')
-        if extra_fields.get('is_superuser') is not True:
-            raise ValueError('Superuser must have is_superuser=True')
+        extra_fields.setdefault("is_staff", True)
+        extra_fields.setdefault("is_superuser", True)
+        if extra_fields.get("is_staff") is not True:
+            raise ValueError("Superuser must have is_staff=True")
+        if extra_fields.get("is_superuser") is not True:
+            raise ValueError("Superuser must have is_superuser=True")
         return self.create_user(email, username, password, **extra_fields)
 
 
@@ -36,17 +40,13 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
     objects = CustomUserManager()
 
-
     # login with email
-    USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = ['username']  # required when creating superuser
+    USERNAME_FIELD = "email"
+    REQUIRED_FIELDS = ["username"]  # required when creating superuser
 
-    required = ['email', 'password', 'username']
-    fields = required + ['full_name']
-    auth_fields = ['email', 'password']
+    required = ["email", "password", "username"]
+    fields = required + ["full_name"]
+    auth_fields = ["email", "password"]
 
     def __str__(self):
         return self.username  # display username in admin
-
-
-

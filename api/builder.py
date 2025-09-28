@@ -1,26 +1,29 @@
-from abc import ABC, abstractmethod
+from abc import ABC
+
+import datetime
+
+from django.contrib.auth.hashers import make_password
+from django.utils import timezone
+from django_redis import get_redis_connection
+from rest_framework_simplejwt.tokens import RefreshToken
+
 from api.models import CustomUser
 from .serializer import UserSerializer
-from rest_framework_simplejwt.tokens import RefreshToken
-from django.contrib.auth.hashers import make_password
-
-
+from .hasher import hash_token
 
 
 class Buildable(ABC):
     def __init__(self, request):
         self.session = None
-        if hasattr(request, 'session'):
+        if hasattr(request, "session"):
             self.data = request.session.get(self.name, {})
             request.session[self.name] = self.data
             self.session = request.session
         else:
             self.data = request
-        
-
 
     def register(self, key, value):
-        print('register this', key, value)
+        print("register this", key, value)
         self.data[key] = value
 
     def build(self):
@@ -40,12 +43,12 @@ class Buildable(ABC):
         self.decouple()
 
         # Serialize the user instance for JSON output
-        return serializer_class(user).data  #  instantiate serializer class here
-    
+        return serializer_class(user).data  # instantiate serializer class here
+
     def decouple(self):
         if self.session:
             del self.session[self.name]
-    
+
     def validate_data(self):
         self.data = self.data
 
@@ -58,40 +61,39 @@ class UserMainBuilder(Buildable):
 
     def validate_data(self):
         super().validate_data()
-        self.data = {k: v for k, v in self.data.items() if k != 'password_repeat'}
+        self.data = {k: v for k, v in self.data.items() if k != "password_repeat"}
         # Hash the password if it exists
-        if 'password' in self.data:
-            self.data['password'] = make_password(self.data['password'])
+        if "password" in self.data:
+            self.data["password"] = make_password(self.data["password"])
+
 
 class UserBuilder(UserMainBuilder):
-    name = 'UserBuilder'
+    name = "UserBuilder"
 
 
 class PasswordResetBuilder(UserMainBuilder):
-    name = 'PasswordResetBuilder'
+    name = "PasswordResetBuilder"
 
     def get_instance(self):
-        print(self.data, 'gettingthe user')
-        return CustomUser.objects.get(email=self.data['email'])
-    
-import datetime
-from django.utils import timezone
-from django_redis import get_redis_connection
-from .hasher import hash_token
-from rest_framework_simplejwt.tokens import RefreshToken
+        print(self.data, "getting the user")
+        return CustomUser.objects.get(email=self.data["email"])
+
 
 class LoginBuilder(Buildable):
-    name = 'LoginBuilder'
+    name = "LoginBuilder"
 
     def build(self):
-
-        user = CustomUser.objects.get(email=self.data['email'])
+        user = CustomUser.objects.get(email=self.data["email"])
         refresh = RefreshToken.for_user(user)
         access = refresh.access_token
 
         # Use Python's datetime.timezone.utc instead of timezone.utc
-        refresh_exp = datetime.datetime.fromtimestamp(refresh['exp'], tz=datetime.timezone.utc)
-        access_exp = datetime.datetime.fromtimestamp(access['exp'], tz=datetime.timezone.utc)
+        refresh_exp = datetime.datetime.fromtimestamp(
+            refresh["exp"], tz=datetime.timezone.utc
+        )
+        access_exp = datetime.datetime.fromtimestamp(
+            access["exp"], tz=datetime.timezone.utc
+        )
 
         seconds_until_refresh_exp = int((refresh_exp - timezone.now()).total_seconds())
         seconds_until_access_exp = int((access_exp - timezone.now()).total_seconds())
@@ -101,17 +103,24 @@ class LoginBuilder(Buildable):
         access_token_hash = hash_token(str(access))
 
         # Store hashes in Redis with TTL
-        conn = get_redis_connection('default')
-        conn.set(f'refresh_token:{refresh_token_hash}', refresh_token_hash, ex=seconds_until_refresh_exp)
-        conn.set(f'access_token:{access_token_hash}', access_token_hash, ex=seconds_until_access_exp)
+        conn = get_redis_connection("default")
+        conn.set(
+            f"refresh_token:{refresh_token_hash}",
+            refresh_token_hash,
+            ex=seconds_until_refresh_exp,
+        )
+        conn.set(
+            f"access_token:{access_token_hash}",
+            access_token_hash,
+            ex=seconds_until_access_exp,
+        )
 
-
-        #remove tbuilder from session
+        # Remove builder from session
         self.decouple()
 
         # Return raw tokens to client
         return {
             "refresh": str(refresh),
             "access": str(access),
-            "email": self.data['email'],
+            "email": self.data["email"],
         }
