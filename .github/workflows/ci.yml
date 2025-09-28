@@ -70,8 +70,9 @@ jobs:
     # as the 'black' formatter handles line length automatically.
     - name: Lint with flake8
       run: |
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=88 --ignore=E203,E501,W503
+        # With a .flake8 file, you just need to run the command.
+        # All configuration is loaded automatically.
+        flake8 .
 
     # Step 5: Run the Django tests.
     # We provide the necessary environment variables to the command, referencing the
