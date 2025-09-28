@@ -1,13 +1,16 @@
+from unittest.mock import patch
+
+from django.contrib.auth.hashers import make_password
 from django.urls import reverse
 from rest_framework import status
-from rest_framework.test import APITestCase, APITransactionTestCase
-from unittest.mock import patch
+from rest_framework.test import APITransactionTestCase
+
 from api.models import CustomUser
-from django.contrib.auth.hashers import make_password
 
 
 class ThirdPartyLoginTests(APITransactionTestCase):
-    databases = '__all__'
+    databases = "__all__"
+
     def setUp(self):
         # create a user matching the email that the third party will return
         self.email = "thirdparty@example.com"

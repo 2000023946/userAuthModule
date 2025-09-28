@@ -10,158 +10,136 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
-from pathlib import Path
-import sys
+# -----------------------------
+# Imports
+# -----------------------------
 import os
-from dotenv import load_dotenv
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-
-if 'test' in sys.argv:
-    print('system is testing')
-    load_dotenv(BASE_DIR / '.env.test')
-
-
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
-
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-sk-h!qpz0+8)v@@#^m+_41nfoaw4n_&+oy^&lt$xrz^b*rz&!b'
-
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-
-ALLOWED_HOSTS = []
-
-
-# Application definition
-INSTALLED_APPS = [
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
-    'rest_framework',       # DRF
-    'rest_framework_simplejwt.token_blacklist',
-    'api',                  # your app
-]
-
-REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
-    ),
-}
-AUTH_PASSWORD_VALIDATORS = [
-    {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
-]
-
+import sys
+from pathlib import Path
 from datetime import timedelta
 
-SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=5),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
-    'ROTATE_REFRESH_TOKENS': True,
-    'BLACKLIST_AFTER_ROTATION': True,
-}
+from dotenv import load_dotenv
 
-MIDDLEWARE = [
-    'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+# -----------------------------
+# Base Directory & Environment
+# -----------------------------
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+if "test" in sys.argv:
+    print("system is testing")
+    load_dotenv(BASE_DIR / ".env.test")
+
+# -----------------------------
+# Security & Debug
+# -----------------------------
+SECRET_KEY = "django-insecure-sk-h!qpz0+8)v@@#^m+_41nfoaw4n_&+oy^&lt$xrz^b*rz&!b"  # ⚠️ change in production!
+DEBUG = True
+ALLOWED_HOSTS: list[str] = []
+
+# -----------------------------
+# Installed Apps
+# -----------------------------
+INSTALLED_APPS = [
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+    "rest_framework",
+    "rest_framework_simplejwt.token_blacklist",
+    "api",
 ]
 
-ROOT_URLCONF = 'UserAuthModule.urls'
+# -----------------------------
+# Middleware
+# -----------------------------
+MIDDLEWARE = [
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+]
 
+# -----------------------------
+# URL & WSGI
+# -----------------------------
+ROOT_URLCONF = "UserAuthModule.urls"
+WSGI_APPLICATION = "UserAuthModule.wsgi.application"
+
+# -----------------------------
+# Templates
+# -----------------------------
 TEMPLATES = [
     {
-        'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
-        'APP_DIRS': True,
-        'OPTIONS': {
-            'context_processors': [
-                'django.template.context_processors.debug',
-                'django.template.context_processors.request',
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.debug",
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
             ],
         },
     },
 ]
 
-WSGI_APPLICATION = 'UserAuthModule.wsgi.application'
-
-
-# Database
-# https://docs.djangoproject.com/en/5.1/ref/settings/#databases
-
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+# -----------------------------
+# REST Framework & JWT
+# -----------------------------
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ),
 }
 
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=5),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+}
 
+# -----------------------------
+# Authentication & Password Validation
+# -----------------------------
+AUTH_USER_MODEL = "api.CustomUser"
 
-# Password validation
-# https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+]
 
-
-
+# -----------------------------
 # Internationalization
-# https://docs.djangoproject.com/en/5.1/topics/i18n/
-
-LANGUAGE_CODE = 'en-us'
-
-TIME_ZONE = 'UTC'
-
+# -----------------------------
+LANGUAGE_CODE = "en-us"
+TIME_ZONE = "UTC"
 USE_I18N = True
-
 USE_TZ = True
 
+# -----------------------------
+# Static Files
+# -----------------------------
+STATIC_URL = "static/"
 
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/5.1/howto/static-files/
+# -----------------------------
+# Default Primary Key Field Type
+# -----------------------------
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-STATIC_URL = 'static/'
-
-# Default primary key field type
-# https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
-
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
-AUTH_USER_MODEL = 'api.CustomUser'
-
-
-import os
-from pathlib import Path
-
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
-# This is needed for the default SQLite database configuration.
-BASE_DIR = Path(__file__).resolve().parent.parent
-
-
-# --- CACHE AND SESSION CONFIGURATION ---
-# Redis is now configured as the default cache and session backend.
-# This improves performance by storing session data in memory.
-REDIS_HOST = os.environ.get('REDIS_HOST', 'localhost')
-REDIS_PORT = int(os.environ.get('REDIS_PORT', 6379))
+# -----------------------------
+# Cache & Session Configuration (Redis)
+# -----------------------------
+REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.environ.get("REDIS_PORT", 6379))
 
 CACHES = {
     "default": {
@@ -174,102 +152,32 @@ CACHES = {
 SESSION_ENGINE = "django.contrib.sessions.backends.cache"
 SESSION_CACHE_ALIAS = "default"
 
+# -----------------------------
+# Database Routers
+# -----------------------------
+DATABASE_ROUTERS = ["api.db_routers.PrimaryReplicaRouter"]
 
-# --- DATABASE CONFIGURATION ---
-# The complex PostgreSQL primary/replica setup is restored below.
-# A TEST configuration has been added to handle the database router
-# during testing.
-
-DATABASE_ROUTERS = ['api.db_routers.PrimaryReplicaRouter']
-
-
+# -----------------------------
+# Databases (PostgreSQL primary/replica)
+# -----------------------------
 DATABASES = {
-    'default': { # This will be our WRITE database ✍️
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DATABASE_NAME'),
-        'USER': os.environ.get('DATABASE_USER'),
-        'PASSWORD': os.environ.get('DATABASE_PASSWORD'),
-        'HOST': os.environ.get('WRITER_DB_HOST'),
-        'PORT': os.environ.get('DATABASE_PORT', 5432),
+    "default": {  # write DB
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.environ.get("DATABASE_NAME"),
+        "USER": os.environ.get("DATABASE_USER"),
+        "PASSWORD": os.environ.get("DATABASE_PASSWORD"),
+        "HOST": os.environ.get("WRITER_DB_HOST"),
+        "PORT": os.environ.get("DATABASE_PORT", 5432),
     },
-    'read_replica': { # This will be our READ database 📖
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DATABASE_NAME'),
-        'USER': os.environ.get('DATABASE_USER'),
-        'PASSWORD': os.environ.get('DATABASE_PASSWORD'),
-        'HOST': os.environ.get('READER_DB_HOST'),
-        'PORT': os.environ.get('DATABASE_PORT', 5432),
-        'TEST': {
-            # This is the crucial part for testing!
-            # It tells Django that during tests, any queries meant for 'read_replica'
-            # should be sent to the 'default' test database instead.
-            'MIRROR': 'default',
-        }
-    }
+    "read_replica": {  # read DB
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.environ.get("DATABASE_NAME"),
+        "USER": os.environ.get("DATABASE_USER"),
+        "PASSWORD": os.environ.get("DATABASE_PASSWORD"),
+        "HOST": os.environ.get("READER_DB_HOST"),
+        "PORT": os.environ.get("DATABASE_PORT", 5432),
+        "TEST": {
+            "MIRROR": "default",  # use default DB during tests
+        },
+    },
 }
-
-
-
-
-# import os
-# from pathlib import Path
-
-# # Build paths inside the project like this: BASE_DIR / 'subdir'.
-# # This is needed for the default SQLite database configuration.
-# BASE_DIR = Path(__file__).resolve().parent.parent
-
-
-# # --- CACHE AND SESSION CONFIGURATION ---
-# # Redis is now configured as the default cache and session backend.
-# # This improves performance by storing session data in memory.
-# REDIS_HOST = os.environ.get('REDIS_HOST', 'localhost')
-# REDIS_PORT = int(os.environ.get('REDIS_PORT', 6379))
-
-# CACHES = {
-#     "default": {
-#         "BACKEND": "django_redis.cache.RedisCache",
-#         "LOCATION": f"redis://{REDIS_HOST}:{REDIS_PORT}/1",
-#         "OPTIONS": {"CLIENT_CLASS": "django_redis.client.DefaultClient"},
-#     }
-# }
-
-# SESSION_ENGINE = "django.contrib.sessions.backends.cache"
-# SESSION_CACHE_ALIAS = "default"
-
-
-# # --- DATABASE CONFIGURATION ---
-# # The complex PostgreSQL primary/replica setup has been replaced with
-# # Django's default SQLite configuration. The database router is also
-# # commented out as it is not needed for a single database.
-
-# # DATABASE_ROUTERS = ['api.db_routers.PrimaryReplicaRouter']
-
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.sqlite3',
-#         'NAME': BASE_DIR / 'db.sqlite3',
-#     }
-# }
-
-
-# # Your previous PostgreSQL configuration is saved below for your reference.
-# #
-# # DATABASES = {
-# #     'default': { # This was your WRITE database ✍️
-# #         'ENGINE': 'django.db.backends.postgresql',
-# #         'NAME': os.environ.get('DATABASE_NAME'),
-# #         'USER': os.environ.get('DATABASE_USER'),
-# #         'PASSWORD': os.environ.get('DATABASE_PASSWORD'),
-# #         'HOST': os.environ.get('WRITER_DB_HOST'), # The global cluster's writer endpoint
-# #         'PORT': os.environ.get('DATABASE_PORT', 5432),
-# #     },
-# #     'read_replica': { # This was your READ database 📖
-# #         'ENGINE': 'django.db.backends.postgresql',
-# #         'NAME': os.environ.get('DATABASE_NAME'),
-# #         'USER': os.environ.get('DATABASE_USER'),
-# #         'PASSWORD': os.environ.get('DATABASE_PASSWORD'),
-# #         'HOST': os.environ.get('READER_DB_HOST'), # The regional cluster's reader endpoint
-# #         'PORT': os.environ.get('DATABASE_PORT', 5432),
-# #     }
-# # }
-

@@ -1,18 +1,23 @@
-from django.urls import reverse
-from rest_framework.test import APITestCase, APITransactionTestCase
-from rest_framework import status
-from django.contrib.auth import get_user_model
-from rest_framework_simplejwt.tokens import RefreshToken
-from django_redis import get_redis_connection
 from unittest.mock import patch
+
+from django.contrib.auth import get_user_model
+from django.urls import reverse
+from rest_framework import status
+from rest_framework.test import APITransactionTestCase
+from rest_framework_simplejwt.tokens import RefreshToken
+
 from ..hasher import hash_token
-from unittest.mock import call, patch
+
 User = get_user_model()
 
+
 class LogoutViewTests(APITransactionTestCase):
-    databases = '__all__'
+    databases = "__all__"
+
     def setUp(self):
-        self.user = User.objects.create_user(email="testuser@example.com", password="TestPass123!", username='uaoi,ma')
+        self.user = User.objects.create_user(
+            email="testuser@example.com", password="TestPass123!", username="uaoi,ma"
+        )
         self.url = reverse("logout")  # make sure your URL name is "logout"
         self.client.force_authenticate(user=self.user)
         self.refresh = hash_token(str(RefreshToken.for_user(self.user)))
@@ -26,12 +31,11 @@ class LogoutViewTests(APITransactionTestCase):
 
         response = self.client.post(
             self.url,
-            {
-                "refresh": str(self.refresh),
-                "access": str(self.access)
-            },
-            format="json"
+            {"refresh": str(self.refresh), "access": str(self.access)},
+            format="json",
         )
 
         self.assertEqual(response.status_code, status.HTTP_205_RESET_CONTENT)
-        self.assertEqual(response.data["message"], "Logout successful. Tokens invalidated.")
+        self.assertEqual(
+            response.data["message"], "Logout successful. Tokens invalidated."
+        )
