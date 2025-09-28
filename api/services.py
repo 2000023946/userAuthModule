@@ -33,7 +33,7 @@ class RegistrationService:
         errors = {}
 
         for key, value in self.get_data(request).items():
-            print(value, "value")
+            print(value, "2345value")
             try:
                 state = state.handle(key, value, builder)
                 self.save(request, state)

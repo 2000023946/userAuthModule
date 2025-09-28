@@ -50,6 +50,7 @@ class EmailValidator(Validable):
         self._ensure_str(value, "Email")
         if not re.match(r"^[\w\.-]+@[\w\.-]+\.\w+$", value):
             raise ValidationError("Invalid email address.")
+        print('validating the email', value, CustomUser.objects.all(), CustomUser.objects.filter(email=value).exists(),)
         if CustomUser.objects.filter(email=value).exists():
             raise ValidationError("Email is already registered.")
         return True

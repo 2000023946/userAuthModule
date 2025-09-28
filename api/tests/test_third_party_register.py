@@ -49,19 +49,18 @@ class ThirdPartyRegisterViewTests(APITransactionTestCase):
         """
         Should update or return the existing user when email already exists.
         """
-        # existing = CustomUser.objects.create_user(
-        #     email="existing@example.com", username="oldusername", password="testpass123"
-        # )
-
+        existing = CustomUser.objects.create_user(
+            email="existing@example.com", username="oldusername", password="testpass123"
+        )
+        print('existing users here: ', CustomUser.objects.all())
         mock_get_user_info.return_value = {
-            "email": "existing@example.com",
-            "username": "updatedusername",
+            "email": existing.email,
+            "username": existing.username,
         }
 
         resp = self.client.post(
             self.url, {"provider": self.provider, "token": self.token}, format="json"
         )
-
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertTrue(resp.data["errors"]["Email"])
 

@@ -1,4 +1,4 @@
-version: '3.9'
+
 
 services:
   db:
@@ -27,11 +27,18 @@ services:
     depends_on:
       - db
       - redis
-    environment:
-      DATABASE_NAME: mydb
-      DATABASE_USER: myuser
-      DATABASE_PASSWORD: mypass
-      DATABASE_HOST: db
-      DATABASE_PORT: 5432
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
+    env_file:  # <-- CORRECTED SYNTAX
+      - .env.test
+
+ # Add this new service for testing 🧪
+  test:
+    build: . # Build the same image as the 'web' service
+    command: >
+      sh -c "coverage run manage.py test && coverage report > coverage_report.txt"
+    depends_on:
+      - db
+      - redis
+    env_file:  # <-- CORRECTED SYNTAX
+      - .env.test
+    volumes:      # <-- ADD THIS SECTION
+      - .:/app    # <-- ADD THIS LINE
