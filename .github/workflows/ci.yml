@@ -18,7 +18,7 @@ jobs:
         uses: actions/checkout@v4
         
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3 # <-- ADD THIS STEP
+        uses: docker/setup-buildx-action@v3
 
       - name: Create .env.test file from your local version
         run: |
@@ -32,18 +32,17 @@ jobs:
           echo "REDIS_PORT=6379" >> .env.test
 
       - name: Lint with flake8
-        run: docker-compose run --rm web flake8 .
+        run: docker compose run --rm web flake8 . # <-- CORRECTED COMMAND
 
       - name: Run tests and generate coverage report
-        # The command for the 'test' service is already set to create a coverage report file
-        run: docker-compose run --rm test
+        run: docker compose run --rm test # <-- CORRECTED COMMAND
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: coverage_report.txt
-
+          
   push-to-dockerhub:
     name: Push to Docker Hub
     # This job depends on the 'build-and-test' job finishing successfully
