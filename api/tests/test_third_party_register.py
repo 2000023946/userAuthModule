@@ -1,11 +1,12 @@
 from django.urls import reverse
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase, APITransactionTestCase
 from unittest.mock import patch
 
 from api.models import CustomUser
 
-class ThirdPartyRegisterViewTests(APITestCase):
+class ThirdPartyRegisterViewTests(APITransactionTestCase):
+    databases = '__all__'
     def setUp(self):
         CustomUser.objects.all().delete()
 

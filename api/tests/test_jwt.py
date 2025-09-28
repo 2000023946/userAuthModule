@@ -1,11 +1,16 @@
 from django.urls import reverse
 from django.contrib.auth import get_user_model
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase, APITransactionTestCase
+
 from rest_framework import status
 
 User = get_user_model()
 
-class JWTAuthTests(APITestCase):
+class JWTAuthTests(APITransactionTestCase):
+      # 1. The "Guest List": Grants this test class PERMISSION to access all DBs.
+    # This solves the `DatabaseOperationForbidden` error.
+    databases = '__all__'
+
     def setUp(self):
         # Create a test user
         self.user = User.objects.create_user(
@@ -21,11 +26,13 @@ class JWTAuthTests(APITestCase):
         """
         Test that logging in returns access and refresh tokens
         """
+        print('Users in the db ', User.objects.all())
         response = self.client.post(self.login_url, {
             'email': 'test@example.com',
             'password': 'testpassword', 
             'username': 'momo'
         }, format='json')
+        print(response)
         self.assertEqual(response.status_code, 200)
         self.assertIn('access', response.data)
         self.assertIn('refresh', response.data)

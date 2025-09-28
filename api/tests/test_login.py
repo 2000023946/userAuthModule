@@ -1,11 +1,12 @@
 from django.urls import reverse
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase, APITransactionTestCase
 from api.models import CustomUser
 from django.contrib.auth.hashers import make_password
 
 
-class LoginTests(APITestCase):
+class LoginTests(APITransactionTestCase):
+    databases = '__all__'
     def setUp(self):
         # Create a user we can log in with
         self.email = "user@example.com"

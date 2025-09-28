@@ -6,10 +6,11 @@ from api.models import CustomUser
 class RegisterViewTests(APITestCase):
     from django.urls import reverse
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase, APITransactionTestCase
 from api.models import CustomUser  # adjust import to your actual user model
 
-class RegistrationTests(APITestCase):
+class RegistrationTests(APITransactionTestCase):
+    databases = '__all__'
     def setUp(self):
         """
         Clear session and database before each test.
