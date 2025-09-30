@@ -11,123 +11,92 @@ class TokenValidationViewTests(APITransactionTestCase):
     databases = "__all__"
 
     def setUp(self):
+        """Set up the client and a test user."""
         self.client = APIClient()
         self.user = User.objects.create_user(
             email="user@example.com", password="Test1234", username="mon"
         )
-        # Set up a session with jti
-        session = self.client.session
-        session["jti"] = "test-jti"
-        session.save()
+        self.url = "/token-validation/"
 
-    def test_missing_tokens(self):
-        """If access or refresh token is missing"""
-        response = self.client.post("/token-validation/", data={}, format="json")
+    def test_missing_refresh_token(self):
+        """Posting without a refresh token should return a 400 Bad Request."""
+        response = self.client.post(self.url, data={}, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data["detail"], "Tokens required")
-
-    def test_missing_session_jti(self):
-        """If session has no jti"""
-        session = self.client.session
-        session.pop("jti", None)
-        session.save()
-
-        response = self.client.post(
-            "/token-validation/", data={"access": "a", "refresh": "r"}, format="json"
-        )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data["detail"], "Session expired")
+        self.assertEqual(response.data["detail"], "Refresh token is required.")
 
     @patch("api.views.get_redis_connection")
-    def test_blacklisted_tokens(self, mock_redis):
-        """If either access or refresh token is blacklisted"""
+    def test_blacklisted_token(self, mock_redis):
+        """A blacklisted refresh token should return a 401 Unauthorized."""
         mock_conn = MagicMock()
-        mock_conn.get.side_effect = lambda key: (
-            "something" if "black_list" in key else None
-        )
+        # Mock that the token exists in the blacklist
+        mock_conn.get.return_value = "true"
         mock_redis.return_value = mock_conn
 
         response = self.client.post(
-            "/token-validation/", data={"access": "a", "refresh": "r"}, format="json"
+            self.url, data={"refresh": "blacklisted-token"}, format="json"
         )
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data["detail"], "Expired Tokens")
+        # Assert the correct status code and detail message for a blacklisted token
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(response.data["detail"], "Token is blacklisted.")
 
     @patch("api.views.get_redis_connection")
-    def test_valid_access_token(self, mock_redis):
-        """If access token exists (still valid)"""
+    def test_invalid_or_expired_refresh_token(self, mock_redis):
+        """An invalid or expired (not in Redis cache) refresh token should return 401."""
         mock_conn = MagicMock()
-        mock_conn.get.side_effect = lambda key: (
-            "hash" if "access_token" in key else None
-        )
+        # Mock that the token is NOT in the blacklist and NOT in the active cache
+        mock_conn.get.return_value = None
         mock_redis.return_value = mock_conn
 
         response = self.client.post(
-            "/token-validation/", data={"access": "a", "refresh": "r"}, format="json"
+            self.url, data={"refresh": "invalid-token"}, format="json"
         )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["detail"], "Success access token valid")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(response.data["detail"], "Invalid or expired refresh token.")
 
+    @patch("api.views.LoginBuilder")
+    @patch("api.views.CustomUser.objects.get")
+    @patch("api.views.RefreshToken")
     @patch("api.views.get_redis_connection")
-    @patch("api.views.LoginBuilder.build")
-    def test_expired_access_valid_refresh_generates_new_tokens(
-        self, mock_build, mock_redis
+    def test_successful_refresh_generates_new_tokens(
+        self, mock_redis, mock_jwt_refresh, mock_get_user, mock_login_builder
     ):
-        """If access expired but refresh valid, generates new tokens"""
+        """A valid refresh token should return a new token pair and a 200 OK status."""
+        # 1. Setup Redis Mock to show a valid, non-blacklisted token
         mock_conn = MagicMock()
 
-        def get_side_effect(key):
-            if key.startswith("access_token"):
-                return None
-            if key.startswith("refresh_token"):
-                return "hash"
+        def redis_get_side_effect(key):
+            if key.startswith("blacklisted_token:"):
+                return None  # Not blacklisted
+            if key.startswith("refresh_token:"):
+                return "1"   # Is a valid, active token
             return None
-
-        mock_conn.get.side_effect = get_side_effect
-        mock_conn.ttl.return_value = 3600
+        mock_conn.get.side_effect = redis_get_side_effect
+        mock_conn.ttl.return_value = 3600  # Mock TTL for blacklisting
         mock_redis.return_value = mock_conn
 
-        mock_build.return_value = {
-            "refresh": "new_refresh",
-            "access": "new_access",
-            "email": self.user.email,
-        }
+        # 2. Mock JWT decoding to return the user's ID
+        mock_jwt_refresh.return_value.get.return_value = self.user.id
 
+        # 3. Mock the user lookup
+        mock_get_user.return_value = self.user
+
+        # 4. Mock the LoginBuilder to return a new token payload
+        mock_builder_instance = MagicMock()
+        new_token_payload = {"refresh": "new_refresh_token", "access": "new_access_token"}
+        mock_builder_instance.build.return_value = new_token_payload
+        mock_login_builder.return_value = mock_builder_instance
+
+        # 5. Make the request
+        valid_refresh_token = "valid-refresh-token"
         response = self.client.post(
-            "/token-validation/",
-            data={"access": "expired-access", "refresh": "valid-refresh"},
-            format="json",
+            self.url, data={"refresh": valid_refresh_token}, format="json"
         )
 
+        # 6. Assertions
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn("details", response.data)
-        self.assertEqual(response.data["details"]["email"], self.user.email)
-        # Ensure refresh token was blacklisted with correct TTL
-        mock_conn.set.assert_any_call(
-            "black_list:valid-refresh", "valid-refresh", ex=3600
+        self.assertEqual(response.data, new_token_payload)
+
+        # Verify that the old token was blacklisted correctly
+        mock_conn.set.assert_called_once_with(
+            f"blacklisted_token:{valid_refresh_token}", "true", ex=3600
         )
-
-    @patch("api.views.get_redis_connection")
-    def test_invalid_refresh_token(self, mock_redis):
-        """If refresh token is expired"""
-        mock_conn = MagicMock()
-
-        # access token missing, refresh token missing
-        def get_side_effect(key):
-            if key.startswith("access_token"):
-                return None
-            if key.startswith("refresh_token"):
-                return None
-            return None
-
-        mock_conn.get.side_effect = get_side_effect
-        mock_redis.return_value = mock_conn
-
-        response = self.client.post(
-            "/token-validation/",
-            data={"access": "expired-access", "refresh": "expired-refresh"},
-            format="json",
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data["detail"], "Invalid Refresh Token")

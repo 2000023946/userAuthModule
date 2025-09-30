@@ -22,6 +22,9 @@ class Buildable(ABC):
     def build(self):
         pass
 
+    def register(self, key, value):
+        self.data[key] = value
+
 
 class Cleanable(ABC):
     """An interface for objects that use composable cleaner strategies."""
@@ -32,20 +35,18 @@ class Cleanable(ABC):
         pass
 
 
+class Clean(ABC):
+    @abstractmethod
+    def clean(self, data):
+        pass
+
+
 class Serializable(ABC):
     """An interface for objects that use a DRF Serializer."""
 
     @property
     @abstractmethod
     def serializer_class(self):
-        pass
-
-
-class Registerable(ABC):
-    """An interface for objects that can register data, like in a session."""
-
-    @abstractmethod
-    def register(self, key, value):
         pass
 
 
@@ -63,7 +64,7 @@ class Updatable(ABC):
 # ------------------------------------------------------------------
 
 
-class ModelBuilder(Buildable, Cleanable, Serializable, Registerable, ABC):
+class ModelBuilder(Buildable, Cleanable, Serializable, ABC):
     """
     Base class for builders that create/update models using the Template Method Pattern.
     Its 'build' contract ALWAYS returns a serialized model dictionary.
@@ -96,9 +97,6 @@ class SessionModelBuilder(ModelBuilder, ABC):
         request.session[self.name] = self.data
         self.session = request.session
 
-    def register(self, key, value):
-        self.data[key] = value
-
     def decouple(self):
         if self.session and self.name in self.session:
             del self.session[self.name]
@@ -127,7 +125,7 @@ class UpdateModelBuilder(SessionModelBuilder, Updatable, ABC):
 # --- Concrete Cleaner Strategy ---
 
 
-class UserPasswordCleaner(Cleanable):
+class UserPasswordCleaner(Clean):
     """A strategy for cleaning and hashing password data."""
 
     def clean(self, data):

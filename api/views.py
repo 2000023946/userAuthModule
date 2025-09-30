@@ -198,7 +198,7 @@ class LogoutView(APIView):
                 conn.set(f"blacklisted_token:{refresh_token}", "true", ex=ttl)
 
             return Response(
-                {"message": "Logout successful."},
+                {"message": "Logout successful. Tokens invalidated."},
                 status=status.HTTP_205_RESET_CONTENT,
             )
         except Exception as e:

@@ -7,14 +7,14 @@ UserAuthModule/urls.py                       3      0   100%
 api/__init__.py                              0      0   100%
 api/admin.py                                 0      0   100%
 api/apps.py                                  4      0   100%
-api/builder.py                              67      0   100%
+api/builder.py                              96      6    94%
 api/db_routers.py                            9      0   100%
 api/hasher.py                                3      0   100%
 api/migrations/0001_initial.py               6      0   100%
 api/migrations/__init__.py                   0      0   100%
 api/models.py                               37      9    76%
 api/serializer.py                           16      4    75%
-api/services.py                            124      9    93%
+api/services.py                            149     10    93%
 api/tests/__init__.py                        0      0   100%
 api/tests/test_jwt.py                       35      0   100%
 api/tests/test_login.py                     40      0   100%
@@ -24,10 +24,10 @@ api/tests/test_password_reset.py            46      0   100%
 api/tests/test_register.py                  82      0   100%
 api/tests/test_third_party_login.py         35      0   100%
 api/tests/test_third_party_register.py      32      0   100%
-api/tests/test_validation.py                73      0   100%
+api/tests/test_validation.py                57      1    98%
 api/urls.py                                  5      0   100%
 api/validators.py                           74      6    92%
-api/views.py                               111     11    90%
+api/views.py                               118     11    91%
 manage.py                                   11      2    82%
 ------------------------------------------------------------
-TOTAL                                      870     41    95%
+TOTAL                                      915     49    95%
