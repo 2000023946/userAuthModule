@@ -1,5 +1,4 @@
-from abc import ABC
-
+from abc import ABC, abstractmethod
 import datetime
 
 from django.contrib.auth.hashers import make_password
@@ -11,114 +10,156 @@ from api.models import CustomUser
 from .serializer import UserSerializer
 from .hasher import hash_token
 
+# ------------------------------------------------------------------
+# 1. CORE & INTERFACE ABCs (Excellent for ISP)
+# ------------------------------------------------------------------
 
 class Buildable(ABC):
+    """The absolute base contract for any builder."""
+    @abstractmethod
+    def build(self):
+        pass
+
+class Cleanable(ABC):
+    """An interface for objects that use composable cleaner strategies."""
+    @property
+    @abstractmethod
+    def cleaners(self):
+        pass
+
+class Serializable(ABC):
+    """An interface for objects that use a DRF Serializer."""
+    @property
+    @abstractmethod
+    def serializer_class(self):
+        pass
+
+class Registerable(ABC):
+    """An interface for objects that can register data, like in a session."""
+    @abstractmethod
+    def register(self, key, value):
+        pass
+
+class Updatable(ABC):
+    """An interface for objects that can fetch an existing instance to update."""
+    @abstractmethod
+    def get_instance(self):
+        pass
+
+# ------------------------------------------------------------------
+# 2. HIERARCHY 1: Model Builders
+#    (Purpose: Create/Update DB Models & return their serialized data)
+# ------------------------------------------------------------------
+
+class ModelBuilder(Buildable, Cleanable, Serializable, Registerable, ABC):
+    """
+    Base class for builders that create/update models using the Template Method Pattern.
+    Its 'build' contract ALWAYS returns a serialized model dictionary.
+    """
+    def build(self):
+        """Defines the algorithm for the model building process."""
+        cleaned_data = self.clean()
+        instance = self.perform_build(cleaned_data)
+        return self.serializer_class(instance).data
+
+    @abstractmethod
+    def perform_build(self, data):
+        """The specific create/update action to be implemented by subclasses."""
+        pass
+
+    def clean(self):
+        """Applies all cleaner strategies to the data."""
+        data = self.data
+        for cleaner_class in self.cleaners:
+            data = cleaner_class().clean(data)
+        return data
+
+class SessionModelBuilder(ModelBuilder, ABC):
+    """A ModelBuilder that sources its data from and manages a Django session."""
     def __init__(self, request):
-        self.session = None
-        if hasattr(request, "session"):
-            self.data = request.session.get(self.name, {})
-            request.session[self.name] = self.data
-            self.session = request.session
-        else:
-            self.data = request
+        self.data = request.session.get(self.name, {})
+        request.session[self.name] = self.data
+        self.session = request.session
 
     def register(self, key, value):
-        print("register this", key, value)
         self.data[key] = value
 
-    def build(self):
-        """
-        If instance is None → create new object.
-        If instance is provided → update existing object.
-        """
-        instance = self.get_instance()
-        self.validate_data()
-        serializer_class = self.serializer_class  # class, not instance
-
-        if instance:
-            user = serializer_class().update(instance, self.data)
-        else:
-            user = serializer_class().create(self.data)
-
-        self.decouple()
-
-        # Serialize the user instance for JSON output
-        return serializer_class(user).data  # instantiate serializer class here
-
     def decouple(self):
-        if self.session:
+        if self.session and self.name in self.session:
             del self.session[self.name]
 
-    def validate_data(self):
-        self.data = self.data
+    def build(self):
+        result = super().build()
+        self.decouple() # Decouple from session after a successful build
+        return result
 
-    def get_instance(self):
-        return
+class CreateModelBuilder(SessionModelBuilder, ABC):
+    """A SessionModelBuilder that specifically creates new model instances."""
+    def perform_build(self, data):
+        return self.serializer_class().create(data)
 
+class UpdateModelBuilder(SessionModelBuilder, Updatable, ABC):
+    """A SessionModelBuilder that specifically updates existing model instances."""
+    def perform_build(self, data):
+        instance = self.get_instance()
+        return self.serializer_class().update(instance, data)
 
-class UserMainBuilder(Buildable):
-    serializer_class = UserSerializer
+# --- Concrete Cleaner Strategy ---
+class UserPasswordCleaner(Cleanable):
+    """A strategy for cleaning and hashing password data."""
+    def clean(self, data):
+        # This cleaner is now self-contained and reusable.
+        cleaned_data = {k: v for k, v in data.items() if k != "password_repeat"}
+        if "password" in cleaned_data:
+            cleaned_data["password"] = make_password(cleaned_data["password"])
+        return cleaned_data
 
-    def validate_data(self):
-        super().validate_data()
-        self.data = {k: v for k, v in self.data.items() if k != "password_repeat"}
-        # Hash the password if it exists
-        if "password" in self.data:
-            self.data["password"] = make_password(self.data["password"])
-
-
-class UserBuilder(UserMainBuilder):
+# --- Concrete Model Builders ---
+class UserBuilder(CreateModelBuilder):
     name = "UserBuilder"
+    serializer_class = UserSerializer
+    cleaners = [UserPasswordCleaner]
 
-
-class PasswordResetBuilder(UserMainBuilder):
+class PasswordResetBuilder(UpdateModelBuilder):
     name = "PasswordResetBuilder"
+    serializer_class = UserSerializer
+    cleaners = [UserPasswordCleaner]
 
     def get_instance(self):
-        print(self.data, "getting the user")
         return CustomUser.objects.get(email=self.data["email"])
 
+# ------------------------------------------------------------------
+# 3. HIERARCHY 2: API Response Builders
+#    (Purpose: Construct a custom JSON response, NOT a model)
+# ------------------------------------------------------------------
 
-class LoginBuilder(Buildable):
-    name = "LoginBuilder"
+class APIResponseBuilder(Buildable, ABC):
+    """
+    Base class for builders that create custom API responses.
+    Its 'build' contract can return ANY dictionary structure.
+    LSP FIXED: This builder has a different parent and contract than ModelBuilder.
+    """
+    def __init__(self, data):
+        self.data = data
 
+class LoginBuilder(APIResponseBuilder):
+    """A builder specifically for creating a JWT token response."""
     def build(self):
         user = CustomUser.objects.get(email=self.data["email"])
         refresh = RefreshToken.for_user(user)
         access = refresh.access_token
 
-        # Use Python's datetime.timezone.utc instead of timezone.utc
-        refresh_exp = datetime.datetime.fromtimestamp(
-            refresh["exp"], tz=datetime.timezone.utc
-        )
-        access_exp = datetime.datetime.fromtimestamp(
-            access["exp"], tz=datetime.timezone.utc
-        )
-
+        # Token expiration and storage logic...
+        refresh_exp = datetime.datetime.fromtimestamp(refresh["exp"], tz=datetime.timezone.utc)
+        access_exp = datetime.datetime.fromtimestamp(access["exp"], tz=datetime.timezone.utc)
         seconds_until_refresh_exp = int((refresh_exp - timezone.now()).total_seconds())
         seconds_until_access_exp = int((access_exp - timezone.now()).total_seconds())
 
-        # Hash tokens for storage
-        refresh_token_hash = hash_token(str(refresh))
-        access_token_hash = hash_token(str(access))
-
-        # Store hashes in Redis with TTL
         conn = get_redis_connection("default")
-        conn.set(
-            f"refresh_token:{refresh_token_hash}",
-            refresh_token_hash,
-            ex=seconds_until_refresh_exp,
-        )
-        conn.set(
-            f"access_token:{access_token_hash}",
-            access_token_hash,
-            ex=seconds_until_access_exp,
-        )
+        conn.set(f"refresh_token:{str(refresh)}", 1, ex=seconds_until_refresh_exp)
+        conn.set(f"access_token:{str(access)}", 1, ex=seconds_until_access_exp)
 
-        # Remove builder from session
-        self.decouple()
-
-        # Return raw tokens to client
+        # Return the custom token payload
         return {
             "refresh": str(refresh),
             "access": str(access),

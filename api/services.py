@@ -13,62 +13,133 @@ from .validators import (
 )
 
 
-class RegistrationService:
-    def get_data(self, data_object):
-        # If data_object has a `session` attribute, use request.data
-        if hasattr(data_object, "session"):
-            return getattr(data_object, "data", {})  # DRF Request stores data in `.data`
-        # If it's a dict-like object, just return it
-        return data_object
+from abc import ABC, abstractmethod
 
-    def execute(self, request, builder, state):
-        """
-        Processes the request data step by step through the state machine.
-        Returns a dict with one of:
-          {"create": created_object_data}
-          {"errors": {state_name: error_msg}}
-          {"message": "some message"}
-        """
-        state = self.get_starting_state(request, state)
-        errors = {}
+# (Your other imports and State/Factory classes would be here)
 
-        for key, value in self.get_data(request).items():
-            print(value, "2345value")
-            try:
-                state = state.handle(key, value, builder)
-                self.save(request, state)
-            except ValueError as e:
-                errors[state.name] = str(e)
+# ------------------------------------------------------------------
+# 1. BASE SERVICE (Implements the Template Method Pattern)
+# ------------------------------------------------------------------
+
+class RegistrationService(ABC):
+    """
+    An abstract base class that defines the template for processing a state machine.
+    It orchestrates the flow, while subclasses implement specific behaviors.
+    """
+    def execute(self, builder, initial_state):
+        """
+        This is the TEMPLATE METHOD. It defines the skeleton of the algorithm.
+        It should not be overridden by subclasses.
+        """
+        self._initialize(builder, initial_state)
+        
+        for key, value in self._get_data().items():
+            step_successful = self._process_step(key, value)
+            if not step_successful:
                 break
+            
+            self._on_step_success()
 
-            if state.is_finish():  # final overall validation
-                try:
-                    state.handle(key, value, builder)
-                except ValueError as e:
-                    errors[state.name] = str(e)
-                    break
-                # registration finished successfully
-                created = builder.build()
-                return {"create": created}
+            if self._is_finished():
+                validation_successful = self._validate_finish_step(key, value)
+                if validation_successful:
+                    self.result = {"create": self.builder.build()}
+                break
+        
+        return self._get_result()
 
-        if errors:
-            return {"errors": errors}
+    def _initialize(self, builder, initial_state):
+        """Hook for initializing state, builder, and data before execution."""
+        self.builder = builder
+        self.state = initial_state
+        self.errors = {}
+        self.result = {}
 
-        # if loop ends without finish/error, you can send intermediate message
-        return {"message": f"Continue at state {state.name}"}
+    def _process_step(self, key, value):
+        """Processes a single step/state in the machine."""
+        try:
+            self.state = self.state.handle(key, value, self.builder)
+            return True
+        except ValueError as e:
+            self.errors[self.state.name] = str(e)
+            return False
 
-    def save(self, request, state):
-        if hasattr(request, "session"):
-            request.session["state"] = state.name
+    def _on_step_success(self):
+        """Hook for actions to perform after a successful step (e.g., saving state)."""
+        pass  # Default implementation does nothing.
 
-    def get_starting_state(self, request, state):
-        if not hasattr(request, "session") or "state" not in request.session:
-            return state
-        state_to_start = request.session["state"]
-        current = state
-        while current and not current.__eq__(state_to_start):
-            current = current.next
-        return current or state
+    def _is_finished(self):
+        """Checks if the state machine has reached its terminal state."""
+        return self.state.is_finish()
+
+    def _validate_finish_step(self, key, value):
+        """Performs a final validation check on the terminal state."""
+        # This re-uses the _process_step logic for the final validation.
+        return self._process_step(key, value)
+
+    def _get_result(self):
+        """Formats and returns the final result of the execution."""
+        if self.result:
+            return self.result
+        if self.errors:
+            return {"errors": self.errors}
+        return {"message": f"Continue at state {self.state.name}"}
+    
+    @abstractmethod
+    def _get_data(self):
+        """Abstract method for subclasses to provide the input data."""
+        pass
+
+# ------------------------------------------------------------------
+# 2. CONCRETE IMPLEMENTATIONS (Subclasses)
+# ------------------------------------------------------------------
+
+class StatefulRegistrationService(RegistrationService):
+    """
+    A service for stateful, multi-request workflows that use sessions.
+    It overrides hooks to retrieve and save state.
+    """
+    def __init__(self, request):
+        self.request = request
+        self.session = getattr(request, 'session', None)
+
+    def _get_data(self):
+        return getattr(self.request, 'data', {})
+
+    def _initialize(self, builder, initial_state):
+        # First, run the parent's initialization
+        super()._initialize(builder, initial_state)
+        
+        # Then, add subclass-specific logic to retrieve the starting state
+        if self.session and "state" in self.session:
+            state_to_start = self.session["state"]
+            current = initial_state
+            while current and not current.__eq__(state_to_start):
+                current = current.next
+            self.state = current or initial_state
+
+    def _on_step_success(self):
+        # This hook saves the current state name to the session
+        if self.session:
+            self.session["state"] = self.state.name
+
+class StatelessRegistrationService(RegistrationService):
+    """
+    A service for simple, single-shot workflows where all data is provided at once.
+    It does not need to manage state between requests.
+    """
+    def __init__(self, data):
+        self.data = data
+
+    def _get_data(self):
+        return self.data
+    
+    # This class doesn't need to override _initialize or _on_step_success,
+    # as the default "do-nothing" implementations are perfect for a stateless flow.
+
+
+
+
 
 
 class ServiceStateFactory(ABC):

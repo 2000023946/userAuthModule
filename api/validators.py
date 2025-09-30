@@ -107,3 +107,5 @@ class PasswordResetValidator(Validable):
     def validate(self, value, all_data=None):
         self._validate_all_data(all_data or {})
         return True
+
+

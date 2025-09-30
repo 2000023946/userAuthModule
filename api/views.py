@@ -1,37 +1,175 @@
 # api/views.py
 
-# -----------------------------
-# Standard Library
-# -----------------------------
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 
-# -----------------------------
-# Third-Party / Django Imports
-# -----------------------------
-from django_redis import get_redis_connection  # type: ignore
-from rest_framework import status  # type: ignore
-from rest_framework.permissions import AllowAny, IsAuthenticated  # type: ignore
-from rest_framework.response import Response  # type: ignore
-from rest_framework.views import APIView  # type: ignore
-# from rest_framework_simplejwt.tokens import RefreshToken  # type: ignore
+from rest_framework import status
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from django_redis import get_redis_connection
+# --- FIX: Added necessary imports for token refresh logic ---
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.exceptions import TokenError
+from .models import CustomUser
 
-# -----------------------------
-# Local Imports
-# -----------------------------
-from .builder import LoginBuilder, PasswordResetBuilder, UserBuilder
+# Local Imports: Import the new SOLID service and builder classes
+from .builder import (
+    UserBuilder,
+    PasswordResetBuilder,
+    LoginBuilder,
+    APIResponseBuilder,
+    ModelBuilder,
+)
 from .services import (
-    LoginFactory,
-    PasswordResetFactory,
+    StatefulRegistrationService,
+    StatelessRegistrationService,
     RegistrationFactory,
-    RegistrationService,
-    ThirdPartyLoginFactory,
+    PasswordResetFactory,
+    LoginFactory,
     ThirdPartyRegistrationFactory,
+    ThirdPartyLoginFactory,
     ThirdPartyStrategySingleton,
+    ServiceStateFactory,
 )
 
-# -----------------------------
-# Views
-# -----------------------------
+# ------------------------------------------------------------------
+# BASE AUTHENTICATION VIEW
+# ------------------------------------------------------------------
+
+
+class BaseAuthView(APIView, ABC):
+    """
+    An abstract base view that orchestrates the service, builder, and factory.
+    Subclasses must define which concrete implementations to use.
+    """
+
+    permission_classes = [AllowAny]
+
+    # --- Abstract properties for subclasses to implement ---
+
+    @property
+    @abstractmethod
+    def service_class(self) -> type[StatefulRegistrationService | StatelessRegistrationService]:
+        """Specifies the service class to use (e.g., Stateful or Stateless)."""
+        pass
+
+    @property
+    @abstractmethod
+    def builder_class(self) -> type[ModelBuilder | APIResponseBuilder]:
+        """Specifies the builder class to use."""
+        pass
+
+    @property
+    @abstractmethod
+    def factory_class(self) -> type[ServiceStateFactory]:
+        """Specifies the state machine factory to use."""
+        pass
+
+    # --- Core Logic ---
+
+    def post(self, request, *args, **kwargs):
+        """
+        Handles the POST request by initializing and executing the appropriate service.
+        The 'kwargs' can contain pre-processed data, like from a third-party login.
+        """
+        service = self.get_service(request, **kwargs)
+        builder = self.get_builder(request, **kwargs)
+        state_machine = self.factory_class().build()
+
+        result = service.execute(builder, state_machine)
+
+        return Response(result, status=self.get_status_code(result))
+
+    def get_service(self, request, **kwargs):
+        """Initializes the correct service with either the request or data."""
+        if "data" in kwargs:
+            return self.service_class(kwargs["data"])
+        return self.service_class(request)
+
+    def get_builder(self, request, **kwargs):
+        """Initializes the correct builder with either the request or data."""
+        # --- FIX: Use issubclass() for a more robust type check ---
+        if issubclass(self.builder_class, APIResponseBuilder):
+            data = kwargs.get("data", request.data)
+            return self.builder_class(data)
+        return self.builder_class(request)
+
+    def get_status_code(self, result: dict) -> int:
+        """Determines the appropriate HTTP status code from the service result."""
+        if "create" in result:
+            return status.HTTP_201_CREATED
+        if "errors" in result:
+            return status.HTTP_400_BAD_REQUEST
+        return status.HTTP_200_OK
+
+
+# ------------------------------------------------------------------
+# CONCRETE AUTHENTICATION VIEWS
+# ------------------------------------------------------------------
+
+
+class RegisterView(BaseAuthView):
+    service_class = StatefulRegistrationService
+    builder_class = UserBuilder
+    factory_class = RegistrationFactory
+
+
+class LoginView(BaseAuthView):
+    service_class = StatefulRegistrationService
+    builder_class = LoginBuilder
+    factory_class = LoginFactory
+
+
+class PasswordResetView(BaseAuthView):
+    service_class = StatefulRegistrationService
+    builder_class = PasswordResetBuilder
+    factory_class = PasswordResetFactory
+
+
+# ------------------------------------------------------------------
+# THIRD-PARTY AUTHENTICATION VIEWS
+# ------------------------------------------------------------------
+
+
+class ThirdPartyAuthView(BaseAuthView):
+    """Base view for handling third-party authentication."""
+
+    service_class = StatelessRegistrationService
+
+    def post(self, request, *args, **kwargs):
+        """
+        Overrides post to first get user info from the third party,
+        then calls the parent's post method with that info.
+        """
+        provider = request.data.get("provider")
+        token = request.data.get("token")
+
+        if not provider or not token:
+            return Response(
+                {"errors": "Provider and token are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            user_info = ThirdPartyStrategySingleton.get_user_info(provider, token)
+            return super().post(request, data=user_info)
+        except (ValueError, KeyError) as e:
+            return Response({"errors": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ThirdPartyRegisterView(ThirdPartyAuthView):
+    builder_class = UserBuilder
+    factory_class = ThirdPartyRegistrationFactory
+
+
+class ThirdPartyLoginView(ThirdPartyAuthView):
+    builder_class = LoginBuilder
+    factory_class = ThirdPartyLoginFactory
+
+
+# ------------------------------------------------------------------
+# OTHER VIEWS
+# ------------------------------------------------------------------
 
 
 class ProtectedView(APIView):
@@ -41,216 +179,86 @@ class ProtectedView(APIView):
         return Response({"message": f"Hello {request.user.email}"})
 
 
-# -----------------------------
-# 1️⃣ Register (Base Auth View)
-# -----------------------------
-
-
-class AuthViews(APIView):
-    permission_classes = [AllowAny]  # anyone can attempt register via 3rd party
-
-    mapping = {
-        "create": status.HTTP_201_CREATED,
-        "errors": status.HTTP_400_BAD_REQUEST,
-        "message": status.HTTP_200_OK,
-    }
-
-    def get_code(self, result):
-        key = next(iter(result.keys()))
-        return self.mapping.get(key, status.HTTP_200_OK)
-
-    def post(self, request):
-        service = self.service()
-        result = service.execute(
-            request, self.builder(request=request), self.factoryState().build()
-        )
-        print("result", result)
-        return Response(result, self.get_code(result))
-
-    def get_valid_data(self, data):
-        """
-        Validate each key/value in data.
-        Returns a tuple: (valid_data_dict, errors_dict)
-        """
-        errors = {}
-        valid_data = {}
-
-        for key, value in data.items():
-            try:
-                self.validate_single_data(key, value)
-                valid_data[key] = value  # only keep if it passes validation
-            except Exception as e:
-                errors[key] = str(e)  # store the error message keyed by field name
-
-        return valid_data, errors
-
-    def validate_single_data(self, key, value):
-        """
-        Raises ValueError if invalid.
-        """
-        if not value:  # e.g. None, '', 0
-            raise ValueError(f"Invalid argument '{value}' for '{key}' data")
-        return True
-
-    @property
-    @abstractmethod
-    def service(self):
-        return RegistrationService
-
-    @property
-    @abstractmethod
-    def builder(self):
-        return UserBuilder
-
-    @property
-    @abstractmethod
-    def factoryState(self):
-        pass
-
-
-class RegisterView(AuthViews):
-    factoryState = RegistrationFactory
-
-
-class PasswordResetView(AuthViews):
-    builder = PasswordResetBuilder
-    factoryState = PasswordResetFactory
-
-
-# -----------------------------
-# 2️⃣ Logout / Token Revocation
-# -----------------------------
-
-
 class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         try:
             refresh_token = request.data.get("refresh")
-            access_token = request.data.get("access")
-
-            if refresh_token is None or access_token is None:
-                print("error")
+            if not refresh_token:
                 return Response(
                     {"error": "Refresh token is required."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
             conn = get_redis_connection("default")
-
-            print("old token")
-
-            # blacklist them
-            if conn.ttl(f"refresh_token:{refresh_token}") > 0:
-                conn.set(
-                    f"black_list:{refresh_token}",
-                    refresh_token,
-                    ex=conn.ttl(f"refresh_token:{refresh_token}"),
-                )
-
-            if conn.ttl(f"access_token:{access_token}") > 0:
-                conn.set(
-                    f"black_list:{access_token}",
-                    access_token,
-                    ex=conn.ttl(f"access_token:{access_token}"),
-                )
+            ttl = conn.ttl(f"refresh_token:{refresh_token}")
+            if ttl > 0:
+                # This key is now consistent with the fixed TokenValidationView
+                conn.set(f"blacklisted_token:{refresh_token}", "true", ex=ttl)
 
             return Response(
-                {"message": "Logout successful. Tokens invalidated."},
+                {"message": "Logout successful."},
                 status=status.HTTP_205_RESET_CONTENT,
             )
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-
-class LoginView(AuthViews):
-    factoryState = LoginFactory
-    builder = LoginBuilder
-
-
-# -----------------------------
-# 4️⃣ Third-Party Register/Login
-# -----------------------------
-
-
-class ThirdPartyView(AuthViews):
-    def post(self, request):
-        data, errors = self.get_valid_data(request.data)
-        if errors:
-            return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            user_info = ThirdPartyStrategySingleton.get_user_info(
-                data["provider"], data["token"]
-            )
-        except Exception as exc:
-            return Response({"errors": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-
-        return super().post(user_info)
-
-
-class ThirdPartyRegisterView(ThirdPartyView):
-    factoryState = ThirdPartyRegistrationFactory
-
-
-class ThirdPartyLoginView(ThirdPartyView):
-    factoryState = ThirdPartyLoginFactory
-    builder = LoginBuilder
-
-
-# -----------------------------
-# 5️⃣ Access / Refresh endpoints
-# -----------------------------
-
-
+# --- FIX: This entire view has been rewritten for correctness and security ---
 class TokenValidationView(APIView):
+    """
+    This view acts as a token refresh endpoint.
+    It validates a refresh token and returns a new pair of access and refresh tokens.
+    """
     permission_classes = [AllowAny]
 
     def post(self, request):
-        access_token_str = request.data.get("access")
         refresh_token_str = request.data.get("refresh")
-
-        if not access_token_str or not refresh_token_str:
+        if not refresh_token_str:
             return Response(
-                {"detail": "Tokens required"}, status=status.HTTP_400_BAD_REQUEST
-            )
-
-        jti = request.session.get("jti")
-        if not jti:
-            return Response(
-                {"detail": "Session expired"}, status=status.HTTP_400_BAD_REQUEST
+                {"detail": "Refresh token is required."},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         conn = get_redis_connection("default")
 
-        # check if blacklisted
-        if conn.get(f"black_list:{access_token_str}") or conn.get(
-            f"black_list:{refresh_token_str}"
-        ):
+        # 1. Check if the token has been explicitly blacklisted (e.g., by logout)
+        if conn.get(f"blacklisted_token:{refresh_token_str}"):
             return Response(
-                {"detail": "Expired Tokens"}, status=status.HTTP_400_BAD_REQUEST
+                {"detail": "Token is blacklisted."},
+                status=status.HTTP_401_UNAUTHORIZED,
             )
 
-        if conn.get(f"access_token:{access_token_str}"):
-            return Response(
-                {"detail": "Success access token valid"}, status=status.HTTP_200_OK
-            )
-
+        # 2. Check if the token is in our cache of active refresh tokens
         if not conn.get(f"refresh_token:{refresh_token_str}"):
             return Response(
-                {"detail": "Invalid Refresh Token"}, status=status.HTTP_400_BAD_REQUEST
+                {"detail": "Invalid or expired refresh token."},
+                status=status.HTTP_401_UNAUTHORIZED,
             )
 
-        # blacklist the refresh token
-        conn.set(
-            f"black_list:{refresh_token_str}",
-            refresh_token_str,
-            ex=conn.ttl(f"refresh_token:{refresh_token_str}"),
-        )
+        try:
+            # 3. Decode the token to get the user and perform token rotation
+            refresh_token = RefreshToken(refresh_token_str)
+            user_id = refresh_token.get("user_id")
+            user = CustomUser.objects.get(id=user_id)
 
-        # make new tokens
-        result = LoginBuilder(request).build()
-        print(result)
+            # 4. Blacklist the OLD refresh token to prevent reuse
+            ttl = conn.ttl(f"refresh_token:{refresh_token_str}")
+            if ttl > 0:
+                conn.set(f"blacklisted_token:{refresh_token_str}", "true", ex=ttl)
 
-        return Response({"details": result}, status=status.HTTP_200_OK)
+            # 5. Use the LoginBuilder to generate a new token pair for the user
+            new_tokens = LoginBuilder({"email": user.email}).build()
+
+            return Response(new_tokens, status=status.HTTP_200_OK)
+
+        except (TokenError, CustomUser.DoesNotExist):
+            return Response(
+                {"detail": "Token is invalid or user not found."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+        except Exception as e:
+            return Response(
+                {"error": f"An unexpected error occurred: {e}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
