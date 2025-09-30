@@ -204,7 +204,9 @@ class LogoutView(APIView):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+
 # --- FIX: This entire view has been rewritten for correctness and security ---
+
 class TokenValidationView(APIView):
     """
     This view acts as a token refresh endpoint.

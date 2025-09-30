@@ -1,5 +1,5 @@
 import requests  # type: ignore
-from abc import ABC, abstractmethod  # import before using
+from abc import ABC, abstractmethod
 
 from .validators import (
     DefaultValidator,
@@ -13,31 +13,29 @@ from .validators import (
 )
 
 
-from abc import ABC, abstractmethod
-
-# (Your other imports and State/Factory classes would be here)
-
 # ------------------------------------------------------------------
 # 1. BASE SERVICE (Implements the Template Method Pattern)
 # ------------------------------------------------------------------
+
 
 class RegistrationService(ABC):
     """
     An abstract base class that defines the template for processing a state machine.
     It orchestrates the flow, while subclasses implement specific behaviors.
     """
+
     def execute(self, builder, initial_state):
         """
         This is the TEMPLATE METHOD. It defines the skeleton of the algorithm.
         It should not be overridden by subclasses.
         """
         self._initialize(builder, initial_state)
-        
+
         for key, value in self._get_data().items():
             step_successful = self._process_step(key, value)
             if not step_successful:
                 break
-            
+
             self._on_step_success()
 
             if self._is_finished():
@@ -45,7 +43,7 @@ class RegistrationService(ABC):
                 if validation_successful:
                     self.result = {"create": self.builder.build()}
                 break
-        
+
         return self._get_result()
 
     def _initialize(self, builder, initial_state):
@@ -74,7 +72,6 @@ class RegistrationService(ABC):
 
     def _validate_finish_step(self, key, value):
         """Performs a final validation check on the terminal state."""
-        # This re-uses the _process_step logic for the final validation.
         return self._process_step(key, value)
 
     def _get_result(self):
@@ -84,33 +81,34 @@ class RegistrationService(ABC):
         if self.errors:
             return {"errors": self.errors}
         return {"message": f"Continue at state {self.state.name}"}
-    
+
     @abstractmethod
     def _get_data(self):
         """Abstract method for subclasses to provide the input data."""
         pass
 
+
 # ------------------------------------------------------------------
 # 2. CONCRETE IMPLEMENTATIONS (Subclasses)
 # ------------------------------------------------------------------
+
 
 class StatefulRegistrationService(RegistrationService):
     """
     A service for stateful, multi-request workflows that use sessions.
     It overrides hooks to retrieve and save state.
     """
+
     def __init__(self, request):
         self.request = request
-        self.session = getattr(request, 'session', None)
+        self.session = getattr(request, "session", None)
 
     def _get_data(self):
-        return getattr(self.request, 'data', {})
+        return getattr(self.request, "data", {})
 
     def _initialize(self, builder, initial_state):
-        # First, run the parent's initialization
         super()._initialize(builder, initial_state)
-        
-        # Then, add subclass-specific logic to retrieve the starting state
+
         if self.session and "state" in self.session:
             state_to_start = self.session["state"]
             current = initial_state
@@ -119,27 +117,26 @@ class StatefulRegistrationService(RegistrationService):
             self.state = current or initial_state
 
     def _on_step_success(self):
-        # This hook saves the current state name to the session
         if self.session:
             self.session["state"] = self.state.name
+
 
 class StatelessRegistrationService(RegistrationService):
     """
     A service for simple, single-shot workflows where all data is provided at once.
     It does not need to manage state between requests.
     """
+
     def __init__(self, data):
         self.data = data
 
     def _get_data(self):
         return self.data
-    
-    # This class doesn't need to override _initialize or _on_step_success,
-    # as the default "do-nothing" implementations are perfect for a stateless flow.
 
 
-
-
+# ------------------------------------------------------------------
+# 3. FACTORIES
+# ------------------------------------------------------------------
 
 
 class ServiceStateFactory(ABC):
@@ -189,6 +186,11 @@ class ThirdPartyLoginFactory(ServiceStateFactory):
         return EmailExistsState().then_handle(CompleteState())
 
 
+# ------------------------------------------------------------------
+# 4. STATE MACHINE
+# ------------------------------------------------------------------
+
+
 class State(ABC):
     validator = DefaultValidator()
 
@@ -196,17 +198,12 @@ class State(ABC):
         self.next = None
 
     def handle(self, key, value, builder):
-        # Pass both current data and accumulated data to validator
         if self.validator.validate(value, builder.data):
             builder.register(key, value)
             return self.next
         return self
 
     def then_handle(self, next_state):
-        """
-        Attach `next_state` at the end of the chain.
-        Returns self (head of the chain) so we can chain safely.
-        """
         tail = self
         while tail.next is not None:
             tail = tail.next
@@ -264,6 +261,11 @@ class CompletePasswordResetState(CompleteState):
 
 class CompleteLoginState(CompleteState):
     name = "CompleteLogin"
+
+
+# ------------------------------------------------------------------
+# 5. THIRD-PARTY STRATEGY
+# ------------------------------------------------------------------
 
 
 class ThirdPartyStrategy(ABC):
