@@ -199,3 +199,41 @@ class LoginBuilder(APIResponseBuilder):
             "access": str(access),
             "email": self.data["email"],
         }
+
+
+# ------------------------------------------------------------------
+# 4. HIERARCHY 3: Service Input Builders
+# ------------------------------------------------------------------
+
+
+class ServiceInputBuilder(Buildable, ABC):
+    """
+    Base class for builders that simply extract and format input data for a service.
+    Its 'build' contract returns a dictionary of required inputs.
+    """
+
+    def __init__(self, request):
+        self.data = request.data
+
+    def build(self):
+        """Default implementation simply passes data through."""
+        return self.data
+
+
+class LogoutBuilder(ServiceInputBuilder):
+    """A builder that extracts the refresh token for the LogoutService."""
+
+    def build(self):
+        return {
+            "refresh": self.data.get("refresh")
+        }
+
+
+class TokenRefreshBuilder(ServiceInputBuilder):
+    """A builder that extracts the refresh token for the TokenRefreshService."""
+
+    def build(self):
+        print('token refersh', self.data.get('refresh'))
+        return {
+            "refresh": self.data.get("refresh")
+        }

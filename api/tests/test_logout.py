@@ -23,7 +23,7 @@ class LogoutViewTests(APITransactionTestCase):
         self.refresh = hash_token(str(RefreshToken.for_user(self.user)))
         self.access = hash_token(str(RefreshToken.for_user(self.user).access_token))
 
-    @patch("django_redis.get_redis_connection")
+    @patch("api.services.get_redis_connection")
     def test_logout_success(self, mock_redis):
         # Mock Redis connection
         mock_conn = mock_redis.return_value
@@ -34,6 +34,8 @@ class LogoutViewTests(APITransactionTestCase):
             {"refresh": str(self.refresh), "access": str(self.access)},
             format="json",
         )
+
+        print(response, 'preposne', response.data)
 
         self.assertEqual(response.status_code, status.HTTP_205_RESET_CONTENT)
         self.assertEqual(

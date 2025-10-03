@@ -1,6 +1,11 @@
 import requests  # type: ignore
 from abc import ABC, abstractmethod
+from django_redis import get_redis_connection
+from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.tokens import RefreshToken
 
+from .models import CustomUser
+from .builder import LoginBuilder
 from .validators import (
     DefaultValidator,
     PasswordRepeatValidator,
@@ -14,21 +19,85 @@ from .validators import (
 
 
 # ------------------------------------------------------------------
-# 1. BASE SERVICE (Implements the Template Method Pattern)
+# SERVICE INTERFACE AND IMPLEMENTATIONS
 # ------------------------------------------------------------------
 
 
-class RegistrationService(ABC):
+class Servicable(ABC):
+    """A single, unified interface for all service classes."""
+
+    @abstractmethod
+    def execute(self, builder, state_machine=None):
+        pass
+
+
+class LogoutService(Servicable):
+    def __init__(self, request):
+        self.request = request
+
+    def execute(self, builder, state_machine=None):
+        data = builder.build()
+        refresh_token = data.get("refresh")
+
+        if not refresh_token:
+            return {"error": "Refresh token is required."}
+
+        try:
+            conn = get_redis_connection("default")
+            ttl = conn.ttl(f"refresh_token:{refresh_token}")
+            if ttl > 0:
+                conn.set(f"blacklisted_token:{refresh_token}", "true", ex=ttl)
+            return {"message": "Logout successful. Tokens invalidated."}
+        except Exception:  # noqa: F841
+            return {"errors": "An unexpected error occurred during logout."}
+
+
+class TokenRefreshService(Servicable):
+    def __init__(self, request):
+        self.request = request
+
+    def execute(self, builder, state_machine=None):
+        data = builder.build()
+        refresh_token_str = data.get("refresh")
+
+        if not refresh_token_str:
+            return {"detail": "Refresh token is required."}
+
+        conn = get_redis_connection("default")
+        if conn.get(f"blacklisted_token:{refresh_token_str}"):
+            return {"detail": "Token is blacklisted."}
+        if not conn.get(f"refresh_token:{refresh_token_str}"):
+            return {"detail": "Invalid or expired refresh token."}
+
+        try:
+            refresh_token = RefreshToken(refresh_token_str)
+            user_id = refresh_token.get("user_id")
+            user = CustomUser.objects.get(id=user_id)
+
+            ttl = conn.ttl(f"refresh_token:{refresh_token_str}")
+            if ttl > 0:
+                conn.set(f"blacklisted_token:{refresh_token_str}", "true", ex=ttl)
+
+            new_tokens = LoginBuilder({"email": user.email}).build()
+            return new_tokens
+        except (TokenError, CustomUser.DoesNotExist):
+            return {"detail": "Token is invalid or user not found."}
+        except Exception:  # noqa: F841
+            return {"errors": "An unexpected error occurred during token refresh."}
+
+
+# ------------------------------------------------------------------
+# BASE SERVICE (Template Method Pattern)
+# ------------------------------------------------------------------
+
+
+class RegistrationService(Servicable):
     """
-    An abstract base class that defines the template for processing a state machine.
-    It orchestrates the flow, while subclasses implement specific behaviors.
+    Abstract base class defining the template for processing a state machine.
     """
 
     def execute(self, builder, initial_state):
-        """
-        This is the TEMPLATE METHOD. It defines the skeleton of the algorithm.
-        It should not be overridden by subclasses.
-        """
+        """Template method defining the skeleton of execution."""
         self._initialize(builder, initial_state)
 
         for key, value in self._get_data().items():
@@ -63,8 +132,8 @@ class RegistrationService(ABC):
             return False
 
     def _on_step_success(self):
-        """Hook for actions to perform after a successful step (e.g., saving state)."""
-        pass  # Default implementation does nothing.
+        """Hook for actions to perform after a successful step."""
+        pass
 
     def _is_finished(self):
         """Checks if the state machine has reached its terminal state."""
@@ -89,15 +158,12 @@ class RegistrationService(ABC):
 
 
 # ------------------------------------------------------------------
-# 2. CONCRETE IMPLEMENTATIONS (Subclasses)
+# CONCRETE IMPLEMENTATIONS
 # ------------------------------------------------------------------
 
 
 class StatefulRegistrationService(RegistrationService):
-    """
-    A service for stateful, multi-request workflows that use sessions.
-    It overrides hooks to retrieve and save state.
-    """
+    """Service for multi-request workflows using sessions."""
 
     def __init__(self, request):
         self.request = request
@@ -108,7 +174,6 @@ class StatefulRegistrationService(RegistrationService):
 
     def _initialize(self, builder, initial_state):
         super()._initialize(builder, initial_state)
-
         if self.session and "state" in self.session:
             state_to_start = self.session["state"]
             current = initial_state
@@ -122,10 +187,7 @@ class StatefulRegistrationService(RegistrationService):
 
 
 class StatelessRegistrationService(RegistrationService):
-    """
-    A service for simple, single-shot workflows where all data is provided at once.
-    It does not need to manage state between requests.
-    """
+    """Service for single-shot workflows with all data provided at once."""
 
     def __init__(self, data):
         self.data = data
@@ -135,7 +197,7 @@ class StatelessRegistrationService(RegistrationService):
 
 
 # ------------------------------------------------------------------
-# 3. FACTORIES
+# FACTORIES
 # ------------------------------------------------------------------
 
 
@@ -187,7 +249,7 @@ class ThirdPartyLoginFactory(ServiceStateFactory):
 
 
 # ------------------------------------------------------------------
-# 4. STATE MACHINE
+# STATE MACHINE
 # ------------------------------------------------------------------
 
 
@@ -264,7 +326,7 @@ class CompleteLoginState(CompleteState):
 
 
 # ------------------------------------------------------------------
-# 5. THIRD-PARTY STRATEGY
+# THIRD-PARTY STRATEGY
 # ------------------------------------------------------------------
 
 
@@ -289,9 +351,7 @@ class GoogleStrategy(ThirdPartyStrategy):
 
 
 class ThirdPartyStrategySingleton:
-    strategies = {
-        "google": GoogleStrategy,
-    }
+    strategies = {"google": GoogleStrategy}
 
     @classmethod
     def get_user_info(cls, provider, token):

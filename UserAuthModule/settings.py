@@ -62,6 +62,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "api.middleware.APILoggingMiddleware",
 ]
 
 # -----------------------------
@@ -178,6 +179,53 @@ DATABASES = {
         "PORT": os.environ.get("DATABASE_PORT", 5432),
         "TEST": {
             "MIRROR": "default",  # use default DB during tests
+        },
+    },
+}
+
+# -----------------------------
+# Logging
+# -----------------------------
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    # How to format the log messages
+    "formatters": {
+        "verbose": {
+            "format": "{levelname} {asctime} {module} {process:d} {thread:d} {message}",
+            "style": "{",
+        },
+        "simple": {
+            "format": "{levelname} {message}",
+            "style": "{",
+        },
+    },
+    # Where the log messages go
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "simple",
+        },
+        "file": {
+            "level": "INFO",
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": os.path.join(BASE_DIR, "logs/api.log"),  # Log file path
+            "maxBytes": 1024 * 1024 * 5,  # 5 MB
+            "backupCount": 5,
+            "formatter": "verbose",
+        },
+    },
+    # Which loggers to use
+    "loggers": {
+        "django": {
+            "handlers": ["console", "file"],
+            "level": "INFO",
+            "propagate": True,
+        },
+        "yourapp": {  # Replace 'yourapp' with the name of your Django app
+            "handlers": ["console", "file"],
+            "level": "DEBUG",  # Capture all levels of logs from your app
+            "propagate": True,
         },
     },
 }
