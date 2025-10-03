@@ -186,6 +186,10 @@ DATABASES = {
 # -----------------------------
 # Logging
 # -----------------------------
+
+LOG_DIR = BASE_DIR / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
