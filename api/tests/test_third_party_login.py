@@ -22,7 +22,7 @@ class ThirdPartyLoginTests(APITransactionTestCase):
         )
         self.url = reverse("third-party-login")  # adjust to your url name
 
-    @patch("api.views.ThirdPartyStrategySingleton.get_user_info")
+    @patch("api.o_auth_start.ThirdPartyStrategySingleton.get_user_info")
     def test_third_party_login_success(self, mock_get_user_info):
         """
         Valid provider + token should return access & refresh tokens.
@@ -40,7 +40,7 @@ class ThirdPartyLoginTests(APITransactionTestCase):
         self.assertIn("refresh", response.data["create"])
         self.assertIn("access", response.data["create"])
 
-    @patch("api.views.ThirdPartyStrategySingleton.get_user_info")
+    @patch("api.o_auth_start.ThirdPartyStrategySingleton.get_user_info")
     def test_third_party_login_invalid_token(self, mock_get_user_info):
         """
         Invalid token should return error from get_user_info.

@@ -6,19 +6,18 @@ from api.services import OneShotAuthService, RedisAuthService
 
 
 class MockState:
-    @property
-    def validator(self, x):
-        return True
-
-    def __init__(self, next_instance):
+    def __init__(self, next_instance=None):
         self.next = next_instance
+
+    def validator(self, x):
+        return True  # simple validation
 
     def is_finish(self):
         return False
 
     def handle(self, value):
         if self.validator(value):
-            return self.next
+            return self.next or self  # go to next state
         return self
 
     def get_data(self, value):
