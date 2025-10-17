@@ -1,38 +1,116 @@
 from abc import ABC, abstractmethod
-import datetime
-
-from django.contrib.auth.hashers import make_password
-from django.utils import timezone
 from django_redis import get_redis_connection
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.exceptions import TokenError
 
 from api.models import CustomUser
 from .serializer import UserSerializer
 
+from .utils import (
+    blacklist_refresh,
+    blacklist_access,
+    get_user_by_email,
+    get_user_by_id,
+)
+
+from .tracers import trace
+from .o_auth_start import ThirdPartyStrategySingleton
 
 # ------------------------------------------------------------------
-# 1. CORE & INTERFACE ABCs (Excellent for ISP)
+# 1. CORE INTERFACES
 # ------------------------------------------------------------------
+
+
+class BuilderException(Exception):
+    pass
 
 
 class Buildable(ABC):
-    """The absolute base contract for any builder."""
-
     @abstractmethod
-    def build(self):
+    @trace(lambda self: f"{self.__class__.__name__}_post")
+    def build(self, data):
         pass
-
-    def register(self, key, value):
-        self.data[key] = value
 
 
 class Cleanable(ABC):
-    """An interface for objects that use composable cleaner strategies."""
-
     @property
     @abstractmethod
     def cleaners(self):
         pass
+
+
+class Serializable(ABC):
+    @abstractmethod
+    def get_serializer(self, instance=None, data=None):
+        pass
+
+
+class Updatable(ABC):
+    @abstractmethod
+    def get_instance(self, data):
+        pass
+
+
+# ------------------------------------------------------------------
+# 2. MODEL BUILDERS
+# ------------------------------------------------------------------
+
+
+class ModelBuilder(Buildable, Cleanable, Serializable, ABC):
+    """Base builder for creating/updating models."""
+
+    serializer_class = None
+
+    def get_serializer(self, instance=None, data=None):
+        """Returns an instance of the serializer."""
+        if instance and data:
+            return self.serializer_class(instance, data=data)
+        if instance:
+            return self.serializer_class(instance)
+        if data:
+            return self.serializer_class(data=data)
+        return self.serializer_class()
+
+    def build(self, data):
+        cleaned_data = self.clean(data)
+        instance = self.perform_build(cleaned_data)
+        serializer = self.get_serializer(instance=instance)
+        return serializer.data
+
+    def clean(self, data):
+        for cleaner_class in self.cleaners:
+            data = cleaner_class().clean(data)
+        return data
+
+    @abstractmethod
+    def perform_build(self, data):
+        pass
+
+
+class CreateModelBuilder(ModelBuilder):
+    """Creates new model instances."""
+
+    def perform_build(self, data):
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        return serializer.save()
+
+
+class UpdateModelBuilder(ModelBuilder, Updatable):
+    """Updates existing model instances."""
+
+    def perform_build(self, data):
+        print("perforing the build", data)
+        instance = self.get_instance(data)
+        print("instance")
+        serializer = self.get_serializer(instance=instance, data=data)
+        serializer.is_valid(raise_exception=True)
+        return serializer.save()
+
+
+# ------------------------------------------------------------------
+# 3. CLEANER STRATEGIES
+# ------------------------------------------------------------------
 
 
 class Clean(ABC):
@@ -41,102 +119,18 @@ class Clean(ABC):
         pass
 
 
-class Serializable(ABC):
-    """An interface for objects that use a DRF Serializer."""
+class UserPasswordCleaner(Clean):
+    def clean(self, data):
+        if "password_repeat" in data:
+            data["password"] = data["password_repeat"]
+            del data["password_repeat"]
 
-    @property
-    @abstractmethod
-    def serializer_class(self):
-        pass
-
-
-class Updatable(ABC):
-    """An interface for objects that can fetch an existing instance to update."""
-
-    @abstractmethod
-    def get_instance(self):
-        pass
-
-
-# ------------------------------------------------------------------
-# 2. HIERARCHY 1: Model Builders
-#    (Purpose: Create/Update DB Models & return their serialized data)
-# ------------------------------------------------------------------
-
-
-class ModelBuilder(Buildable, Cleanable, Serializable, ABC):
-    """
-    Base class for builders that create/update models using the Template Method Pattern.
-    Its 'build' contract ALWAYS returns a serialized model dictionary.
-    """
-
-    def build(self):
-        """Defines the algorithm for the model building process."""
-        cleaned_data = self.clean()
-        instance = self.perform_build(cleaned_data)
-        return self.serializer_class(instance).data
-
-    @abstractmethod
-    def perform_build(self, data):
-        """The specific create/update action to be implemented by subclasses."""
-        pass
-
-    def clean(self):
-        """Applies all cleaner strategies to the data."""
-        data = self.data
-        for cleaner_class in self.cleaners:
-            data = cleaner_class().clean(data)
         return data
 
 
-class SessionModelBuilder(ModelBuilder, ABC):
-    """A ModelBuilder that sources its data from and manages a Django session."""
-
-    def __init__(self, request):
-        self.data = request.session.get(self.name, {})
-        request.session[self.name] = self.data
-        self.session = request.session
-
-    def decouple(self):
-        if self.session and self.name in self.session:
-            del self.session[self.name]
-
-    def build(self):
-        result = super().build()
-        self.decouple()  # Decouple from session after a successful build
-        return result
-
-
-class CreateModelBuilder(SessionModelBuilder, ABC):
-    """A SessionModelBuilder that specifically creates new model instances."""
-
-    def perform_build(self, data):
-        return self.serializer_class().create(data)
-
-
-class UpdateModelBuilder(SessionModelBuilder, Updatable, ABC):
-    """A SessionModelBuilder that specifically updates existing model instances."""
-
-    def perform_build(self, data):
-        instance = self.get_instance()
-        return self.serializer_class().update(instance, data)
-
-
-# --- Concrete Cleaner Strategy ---
-
-
-class UserPasswordCleaner(Clean):
-    """A strategy for cleaning and hashing password data."""
-
-    def clean(self, data):
-        # This cleaner is now self-contained and reusable.
-        cleaned_data = {k: v for k, v in data.items() if k != "password_repeat"}
-        if "password" in cleaned_data:
-            cleaned_data["password"] = make_password(cleaned_data["password"])
-        return cleaned_data
-
-
-# --- Concrete Model Builders ---
+# ------------------------------------------------------------------
+# 4. CONCRETE MODEL BUILDERS
+# ------------------------------------------------------------------
 
 
 class UserBuilder(CreateModelBuilder):
@@ -150,90 +144,120 @@ class PasswordResetBuilder(UpdateModelBuilder):
     serializer_class = UserSerializer
     cleaners = [UserPasswordCleaner]
 
-    def get_instance(self):
-        return CustomUser.objects.get(email=self.data["email"])
+    def get_instance(self, data):
+        print("getting the instance", data)
+        email = data["email"]
+        user = get_user_by_email(email=email)
+        print("getting the instance", user)
+        return user
 
 
 # ------------------------------------------------------------------
-# 3. HIERARCHY 2: API Response Builders
-#    (Purpose: Construct a custom JSON response, NOT a model)
+# 5. API RESPONSE BUILDERS
 # ------------------------------------------------------------------
 
 
 class APIResponseBuilder(Buildable, ABC):
-    """
-    Base class for builders that create custom API responses.
-    Its 'build' contract can return ANY dictionary structure.
-    LSP FIXED: This builder has a different parent and contract than ModelBuilder.
-    """
+    """Base builder for API responses (non-model data)."""
 
-    def __init__(self, data):
-        self.data = data
+    pass
 
 
 class LoginBuilder(APIResponseBuilder):
-    """A builder specifically for creating a JWT token response."""
+    """Builds a JWT token response."""
 
-    def build(self):
-        user = CustomUser.objects.get(email=self.data["email"])
+    def build(self, data):
+        user = self.get_instance(data)
+        print("user ", user)
         refresh = RefreshToken.for_user(user)
         access = refresh.access_token
 
-        # Token expiration and storage logic...
-        refresh_exp = datetime.datetime.fromtimestamp(
-            refresh["exp"], tz=datetime.timezone.utc
-        )
-        access_exp = datetime.datetime.fromtimestamp(
-            access["exp"], tz=datetime.timezone.utc
-        )
-        seconds_until_refresh_exp = int((refresh_exp - timezone.now()).total_seconds())
-        seconds_until_access_exp = int((access_exp - timezone.now()).total_seconds())
-
-        conn = get_redis_connection("default")
-        conn.set(f"refresh_token:{str(refresh)}", 1, ex=seconds_until_refresh_exp)
-        conn.set(f"access_token:{str(access)}", 1, ex=seconds_until_access_exp)
-
-        # Return the custom token payload
         return {
             "refresh": str(refresh),
             "access": str(access),
-            "email": self.data["email"],
         }
 
-
-# ------------------------------------------------------------------
-# 4. HIERARCHY 3: Service Input Builders
-# ------------------------------------------------------------------
+    def get_instance(self, data):
+        return get_user_by_email(email=data["email"])
 
 
-class ServiceInputBuilder(Buildable, ABC):
-    """
-    Base class for builders that simply extract and format input data for a service.
-    Its 'build' contract returns a dictionary of required inputs.
-    """
+class ValidationTokenBuilder(APIResponseBuilder):
+    """Validates a JWT token."""
 
-    def __init__(self, request):
-        self.data = request.data
-
-    def build(self):
-        """Default implementation simply passes data through."""
-        return self.data
-
-
-class LogoutBuilder(ServiceInputBuilder):
-    """A builder that extracts the refresh token for the LogoutService."""
-
-    def build(self):
-        return {
-            "refresh": self.data.get("refresh")
-        }
+    def build(self, data):
+        token = data.get("refresh_token")
+        if not token:
+            raise BuilderException("Token not provided.")
+        try:
+            RefreshToken(token)
+            return {"detail": "Token is valid."}
+        except TokenError:
+            raise BuilderException("Token is invalid or expired.")
 
 
-class TokenRefreshBuilder(ServiceInputBuilder):
-    """A builder that extracts the refresh token for the TokenRefreshService."""
+class LogoutBuilder(APIResponseBuilder):
+    """Invalidates tokens by blacklisting them."""
 
-    def build(self):
-        print('token refersh', self.data.get('refresh'))
-        return {
-            "refresh": self.data.get("refresh")
-        }
+    def build(self, data):
+        print("logout data", data)
+        refresh_token = data.get("refresh")
+        access_token = data.get("access")
+        if not refresh_token or not access_token:
+            raise BuilderException("Both access and refresh tokens must be provided.")
+
+        try:
+            conn = get_redis_connection("default")
+
+            blacklist_refresh(conn, refresh_token)
+
+            blacklist_access(conn, refresh_token)
+
+            return {"detail": "Logout successful. Tokens invalidated."}
+        except Exception:
+            raise BuilderException("An unexpected error occurred during logout.")
+
+
+class TokenRefreshBuilder(LoginBuilder):
+    """Refreshes JWT tokens."""
+
+    class MinimalUser:
+        def __init__(self, id):
+            self.id = id
+
+    def build(self, data):
+        refresh_token = data.get("refresh")
+        print(refresh_token, "token 56")
+        if not refresh_token:
+            raise BuilderException("Refresh token not provided.")
+        try:
+            conn = get_redis_connection("default")
+            print("got the conn")
+
+            user_id = refresh_token.get("user_id")
+
+            print("user id", user_id)
+
+            blacklist_refresh(conn, refresh_token)
+
+            print("balcklisted")
+            return super().build({"pk": user_id})
+        except (TokenError, CustomUser.DoesNotExist):
+            raise TokenError("Token is invalid or user not found.")
+        except Exception:
+            raise BuilderException("An unexpected error occurred during token refresh.")
+
+    def get_instance(self, data):
+        print(data, "gettingthe user")
+        return get_user_by_id(data["pk"])
+
+
+class OAuthUserInfoBuilder(APIResponseBuilder):
+    def build(self, data):
+        provider = data.get("provider")
+        token = data.get("token")
+
+        if not provider or not token:
+            raise BuilderException("Inputs where not given. Cannot be null!")
+
+        user_info = ThirdPartyStrategySingleton.get_user_info(provider, token)
+        return user_info

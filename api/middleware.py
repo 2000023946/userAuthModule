@@ -1,5 +1,6 @@
 import logging
 import time
+from .cache import QueryCacheSingleton
 
 
 logger = logging.getLogger(__name__)
@@ -23,4 +24,15 @@ class APILoggingMiddleware:
         response_log_data = f"OUTGOING RESPONSE: {response.status_code} for {request.path} took {duration:.2f}s"
         logger.info(response_log_data)
 
+        return response
+
+
+class RequestCacheMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        QueryCacheSingleton.clear()  # Start fresh for this request
+        response = self.get_response(request)
+        QueryCacheSingleton.clear()  # Optional: cleanup after response
         return response

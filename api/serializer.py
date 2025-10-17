@@ -1,12 +1,6 @@
 from rest_framework import serializers  # type: ignore
 
 from .models import CustomUser
-from .validators import (
-    UsernameValidator,
-    EmailValidator,
-    PasswordValidator,
-    UserRegistrationValidator
-)
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -14,16 +8,22 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CustomUser
-        fields = ["id", "email", "username", "full_name", "password"]
+        fields = ["id", "email", "password"]
 
-    def validate_username(self, value):
-        return UsernameValidator().validate(value)
+    def update(self, instance, validated_data):
+        print("Updating via serializer")
 
-    def validate_email(self, value):
-        return EmailValidator().validate(value)
+        # Pop password if it exists to handle separately
+        password = validated_data.pop("password", None)
 
-    def validate_password(self, value):
-        return PasswordValidator().validate(value)
+        # Update all other fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
 
-    def validate(self, data):
-        return UserRegistrationValidator().validate(data)
+        # Safely set password using Django's set_password method
+        if password:
+            instance.set_password(password)
+
+        instance.save()
+        print(instance.password, instance.email)  # optional debug
+        return instance

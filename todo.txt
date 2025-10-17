@@ -1,4 +1,25 @@
-conduct tests on the services, validators, serializer, builder
-make the register, password reset views and make tests
+fix the validation for the token make serpation for the validtion adn the output (done)
+fix logic in the buidler for login only need to store toekns when baclklisting sinc ethe exp is in token info (done)
+add a request cache to reduce multi db hits within one request <-- add unit test here (done)
+fix up the loggers <-- added unit tests (done)
+add logging to track the success and the failure using promotheus <-- add unit test here (done)
+add tracing (done)
+connect all three with thrid party providers (done)
+add a vlidate endpoint and refactor the buidler for the token code  <-- add unit test here (done)
+unit test builder (done)
+unit test validatos (done)
+integrated test oen for each view
+make integrated tests for validators
+make the integrated docker compose tests
+Finished the User auth API
 
-integrate the register with 3rd party apis
+
+IaC Terraform
+add lbs to each AZ
+add terragrunt minatability
+add tracing 
+metrics
+loggs
+add unit tests (go)
+Finished the IaC for API
+

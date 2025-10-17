@@ -24,7 +24,7 @@ class ThirdPartyRegisterViewTests(APITransactionTestCase):
         self.provider = "google"
         self.token = "dummy-token"
 
-    @patch("api.services.GoogleStrategy.get_user_info")
+    @patch("api.o_auth_start.GoogleStrategy.get_user_info")
     def test_create_new_user_via_google(self, mock_get_user_info):
         """
         Should create a new user when email does not exist yet.
@@ -44,7 +44,7 @@ class ThirdPartyRegisterViewTests(APITransactionTestCase):
 
         self.assertTrue(CustomUser.objects.filter(email="newuser@example.com").exists())
 
-    @patch("api.services.GoogleStrategy.get_user_info")
+    @patch("api.o_auth_start.GoogleStrategy.get_user_info")
     def test_existing_user_via_google(self, mock_get_user_info):
         """
         Should update or return the existing user when email already exists.

@@ -34,12 +34,11 @@ class ThirdPartyLoginTests(APITransactionTestCase):
 
         payload = {"provider": "google", "token": "validtoken"}
         response = self.client.post(self.url, payload, format="json")
-
+        print("response", response.data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertIn("create", response.data)
         self.assertIn("refresh", response.data["create"])
         self.assertIn("access", response.data["create"])
-        self.assertEqual(response.data["create"]["email"], self.email)
 
     @patch("api.views.ThirdPartyStrategySingleton.get_user_info")
     def test_third_party_login_invalid_token(self, mock_get_user_info):

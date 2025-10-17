@@ -10,21 +10,14 @@ from .builder import (
     UserBuilder,
     PasswordResetBuilder,
     LoginBuilder,
-    APIResponseBuilder,
     LogoutBuilder,
     TokenRefreshBuilder,
+    OAuthUserInfoBuilder,
+    ValidationTokenBuilder,
 )
 from .services import (
-    StatefulRegistrationService,
-    StatelessRegistrationService,
-    RegistrationFactory,
-    PasswordResetFactory,
-    LoginFactory,
-    ThirdPartyRegistrationFactory,
-    ThirdPartyLoginFactory,
-    ThirdPartyStrategySingleton,
-    LogoutService,
-    TokenRefreshService,
+    RedisAuthService,
+    OneShotAuthService,
 )
 from .loggers import (
     LoginLogger,
@@ -33,6 +26,27 @@ from .loggers import (
     LogoutLogger,
     TokenRefreshLogger,
 )
+from .states import (
+    RegistrationFactory,
+    PasswordResetFactory,
+    LoginFactory,
+    ThirdPartyRegistrationFactory,
+    ThirdPartyLoginFactory,
+    FullTokenFactory,
+    RefreshTokenFactory,
+    OAuthTokenFactory,
+)
+from api.metrics import (
+    RegistrationMetrics,
+    LoginMetrics,
+    LogoutMetrics,
+    PasswordResetRequestMetrics,
+    ThirdPartyLoginMetrics,
+    ThirdPartyRegisterMetrics,
+    TokenRefreshMetrics,
+    track_metrics,
+)
+from .tracers import trace
 
 
 # ------------------------------------------------------------------
@@ -45,6 +59,7 @@ class BaseAuthView(APIView, ABC):
     The root abstract view. Defines the common interface for services,
     builders, and loggers, but leaves the execution logic to subclasses.
     """
+
     permission_classes = [AllowAny]
 
     @property
@@ -67,22 +82,59 @@ class BaseAuthView(APIView, ABC):
         """Execution logic is deferred to subclasses."""
         pass
 
-    def get_service(self, request, **kwargs):
-        if "data" in kwargs:
-            return self.service_class(kwargs["data"])
-        return self.service_class(request)
+    @property
+    @abstractmethod
+    def factory_class(self):
+        """Specifies the state machine factory to use."""
+        pass
 
-    def get_builder(self, request, **kwargs):
-        """Initializes the correct builder with either the request or data."""
-        if issubclass(self.builder_class, APIResponseBuilder):
-            data = kwargs.get("data", request.data)
-            return self.builder_class(data)
-        return self.builder_class(request)
+    @property
+    @abstractmethod
+    def metrics(self):
+        """Specifies the metrics to use."""
+        pass
+
+    @abstractmethod
+    def get_data(self, data):
+        """Method used for strategy on how each view passes in the data"""
+
+
+class AuthView(BaseAuthView):
+    """
+    A specialized base view for stateful operations that require a state machine.
+    """
+
+    @trace(lambda self: f"{self.__class__.__name__}_post")
+    @track_metrics(lambda self: self.metrics)
+    def post(self, request, *args, **kwargs):
+        data = self.get_data()
+        if not data or "errors" in data:
+            return Response(
+                data if data else {"errors": "Data cannot be empty"},
+                status=self.get_status_code(data),
+            )
+
+        builder = self.builder_class()
+        service = self.service_class()
+        state_machine = self.factory_class().build()
+        logger = self.logger()
+
+        result = service.execute(self.get_data(), builder, state_machine)
+        status_code = self.get_status_code(result)
+        log_data = self._get_logging_data(result)
+        logger.log(status_code, log_data)
+
+        print("res", result)
+
+        return Response(result, status=status_code)
+
+    def get_data(self):
+        return self.request.data
 
     def get_status_code(self, result: dict) -> int:
         if "create" in result:
             return status.HTTP_201_CREATED
-        if "errors" in result:
+        if "errors" in result or not result:
             return status.HTTP_400_BAD_REQUEST
         return status.HTTP_200_OK
 
@@ -93,75 +145,33 @@ class BaseAuthView(APIView, ABC):
         return log_data
 
 
-class StatefulAuthView(BaseAuthView):
-    """
-    A specialized base view for stateful operations that require a state machine.
-    """
-
-    @property
-    @abstractmethod
-    def factory_class(self):
-        """Specifies the state machine factory to use."""
-        pass
-
-    def post(self, request, *args, **kwargs):
-        service = self.get_service(request, **kwargs)
-        builder = self.get_builder(request, **kwargs)
-        state_machine = self.factory_class().build()
-
-        result = service.execute(builder, state_machine)
-        status_code = self.get_status_code(result)
-        log_data = self._get_logging_data(result)
-
-        logger_instance = self.logger()
-        logger_instance.log(status_code, log_data)
-
-        return Response(result, status=status_code)
-
-
-class StatelessAuthView(BaseAuthView):
-    """
-    A specialized base view for stateless operations that do not use a state machine.
-    """
-
-    def post(self, request, *args, **kwargs):
-        service = self.get_service(request, **kwargs)
-        builder = self.get_builder(request, **kwargs)
-
-        result = service.execute(builder)
-        status_code = self.get_status_code(result)
-        log_data = self._get_logging_data(result)
-
-        logger_instance = self.logger()
-        logger_instance.log(status_code, log_data)
-
-        return Response(result, status=status_code)
-
-
 # ------------------------------------------------------------------
 # CONCRETE AUTHENTICATION VIEWS
 # ------------------------------------------------------------------
 
 
-class RegisterView(StatefulAuthView):
-    service_class = StatefulRegistrationService
+class RegisterView(AuthView):
+    service_class = RedisAuthService
     builder_class = UserBuilder
     factory_class = RegistrationFactory
     logger = RegisterLogger
+    metrics = RegistrationMetrics()
 
 
-class LoginView(StatefulAuthView):
-    service_class = StatefulRegistrationService
+class LoginView(AuthView):
+    service_class = RedisAuthService
     builder_class = LoginBuilder
     factory_class = LoginFactory
     logger = LoginLogger
+    metrics = LoginMetrics()
 
 
-class PasswordResetView(StatefulAuthView):
-    service_class = StatefulRegistrationService
+class PasswordResetView(AuthView):
+    service_class = RedisAuthService
     builder_class = PasswordResetBuilder
     factory_class = PasswordResetFactory
     logger = PasswordResetLogger
+    metrics = PasswordResetRequestMetrics()
 
 
 # ------------------------------------------------------------------
@@ -169,37 +179,35 @@ class PasswordResetView(StatefulAuthView):
 # ------------------------------------------------------------------
 
 
-class ThirdPartyAuthView(StatefulAuthView):
+class ThirdPartyAuthView(AuthView):
     """Base view for handling third-party authentication."""
-    service_class = StatelessRegistrationService
 
-    def post(self, request, *args, **kwargs):
-        provider = request.data.get("provider")
-        token = request.data.get("token")
+    service_class = OneShotAuthService
 
-        if not provider or not token:
-            return Response(
-                {"errors": "Provider and token are required."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+    def get_data(self):
+        # Execute the custom logic here and return the processed data
+        builder = OAuthUserInfoBuilder()
+        state_machine = OAuthTokenFactory().build()
+        service = self.service_class()
 
-        try:
-            user_info = ThirdPartyStrategySingleton.get_user_info(provider, token)
-            return super().post(request, data=user_info)
-        except (ValueError, KeyError) as e:
-            return Response({"errors": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        result = service.execute(self.request.data, builder, state_machine)
+        self.user_info = result
+        print("user info", self.user_info)
+        return result[list(result.keys())[0]]
 
 
 class ThirdPartyRegisterView(ThirdPartyAuthView):
     builder_class = UserBuilder
     factory_class = ThirdPartyRegistrationFactory
     logger = RegisterLogger
+    metrics = ThirdPartyRegisterMetrics()
 
 
 class ThirdPartyLoginView(ThirdPartyAuthView):
     builder_class = LoginBuilder
     factory_class = ThirdPartyLoginFactory
     logger = LoginLogger
+    metrics = ThirdPartyLoginMetrics()
 
 
 # ------------------------------------------------------------------
@@ -207,25 +215,42 @@ class ThirdPartyLoginView(ThirdPartyAuthView):
 # ------------------------------------------------------------------
 
 
-class LogoutView(StatelessAuthView):
+class LogoutView(AuthView):
     permission_classes = [IsAuthenticated]
-    service_class = LogoutService
+    service_class = OneShotAuthService
     builder_class = LogoutBuilder
     logger = LogoutLogger
+    factory_class = FullTokenFactory
+    metrics = LogoutMetrics()
 
     def get_status_code(self, result: dict) -> int:
-        if "error" in result:
+        if "errors" in result:
             return status.HTTP_400_BAD_REQUEST
         return status.HTTP_205_RESET_CONTENT
 
 
-class TokenRefreshView(StatelessAuthView):
+class ValidateTokenView(AuthView):
     permission_classes = [AllowAny]
-    service_class = TokenRefreshService
-    builder_class = TokenRefreshBuilder
-    logger = TokenRefreshLogger
+    service_class = OneShotAuthService
+    builder_class = ValidationTokenBuilder
+    logger = ValidationTokenBuilder  # Reusing LoginLogger for simplicity
+    factory_class = FullTokenFactory
+    metrics = ValidationTokenBuilder  # No specific metrics for validation
 
     def get_status_code(self, result: dict) -> int:
-        if "detail" in result or "error" in result:
+        if "errors" in result:
+            return status.HTTP_401_UNAUTHORIZED
+        return status.HTTP_200_OK
+
+
+class TokenRefreshView(AuthView):
+    service_class = OneShotAuthService
+    builder_class = TokenRefreshBuilder
+    logger = TokenRefreshLogger
+    factory_class = RefreshTokenFactory
+    metrics = TokenRefreshMetrics()
+
+    def get_status_code(self, result: dict) -> int:
+        if "errors" in result:
             return status.HTTP_401_UNAUTHORIZED
         return status.HTTP_200_OK

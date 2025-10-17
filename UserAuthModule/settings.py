@@ -19,6 +19,16 @@ from pathlib import Path
 from datetime import timedelta
 
 from dotenv import load_dotenv
+from .trace import TracerFactory
+from .logger import LoggerRegistry
+
+# tracing
+
+# from opentelemetry import trace
+# from opentelemetry.sdk.resources import Resource
+# from opentelemetry.sdk.trace import TracerProvider
+# from opentelemetry.sdk.trace.export import BatchSpanProcessor
+# from opentelemetry.exporter.jaeger.thrift import JaegerExporter
 
 # -----------------------------
 # Base Directory & Environment
@@ -46,6 +56,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django_prometheus",
     "rest_framework",
     "rest_framework_simplejwt.token_blacklist",
     "api",
@@ -63,6 +74,9 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "api.middleware.APILoggingMiddleware",
+    "api.middleware.RequestCacheMiddleware",
+    "django_prometheus.middleware.PrometheusBeforeMiddleware",
+    "django_prometheus.middleware.PrometheusAfterMiddleware",
 ]
 
 # -----------------------------
@@ -112,7 +126,9 @@ SIMPLE_JWT = {
 AUTH_USER_MODEL = "api.CustomUser"
 
 AUTH_PASSWORD_VALIDATORS = [
-    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"
+    },
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
@@ -152,6 +168,7 @@ CACHES = {
 
 SESSION_ENGINE = "django.contrib.sessions.backends.cache"
 SESSION_CACHE_ALIAS = "default"
+
 
 # -----------------------------
 # Database Routers
@@ -233,3 +250,23 @@ LOGGING = {
         },
     },
 }
+
+# from celery.schedules import crontab
+
+ENVIRONMENT = os.environ.get("ENVIRONMENT", "development")
+
+
+CELERY_BEAT_SCHEDULE = {
+    "push-metrics-every-10-seconds": {
+        "task": "api.tasks.push_metrics",
+        "schedule": 10.0,  # seconds, or use crontab(minute="*/1") for 1 min
+    },
+}
+
+# Set up a tracer providerfrom tracing import TracerFactory
+
+tracer = TracerFactory.make_tracer()
+
+
+LOGGER_BACKEND = os.getenv("LOG_BACKEND", "console")
+logger = LoggerRegistry.get_logger(LOGGER_BACKEND)
