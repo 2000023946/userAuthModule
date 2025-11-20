@@ -107,7 +107,6 @@ Add multi-region / sharding
 Add logging, metrics, and monitoring
 
 ------- TESTING ----------
-
 Name                                     Stmts   Miss  Cover
 ------------------------------------------------------------
 UserAuthModule/__init__.py                   0      0   100%
