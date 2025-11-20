@@ -3,11 +3,8 @@ set up user login/auth, with jwt token that has
 lots of server sharing one regional DB and has a
 cache to reduce the DB hits for token refresh
 allowing for new refresh tokens every time access
-is made new. Allows for GEO + sharding replication
-meaning nearby servers in the area get any new 
-token access refresh. And allows for updating the 
-cache/DB when old entries exsists asynchronouly thru 
-celery.
+is made new. Uses amazon aurora DB with the read and write 
+copies. 
 
 Functional Requirements:
 1. User auth
@@ -108,3 +105,54 @@ Add Celery for async cleanup / replication
 Add multi-region / sharding
 
 Add logging, metrics, and monitoring
+
+------- TESTING ----------
+
+Name                                     Stmts   Miss  Cover
+------------------------------------------------------------
+UserAuthModule/__init__.py                   0      0   100%
+UserAuthModule/logger.py                    43     12    72%
+UserAuthModule/settings.py                  44      0   100%
+UserAuthModule/test.py                       0      0   100%
+UserAuthModule/trace.py                     41      5    88%
+UserAuthModule/urls.py                       3      0   100%
+api/__init__.py                              0      0   100%
+api/admin.py                                 0      0   100%
+api/apps.py                                  4      0   100%
+api/builder.py                             155     16    90%
+api/cache.py                                17      1    94%
+api/db_routers.py                            9      0   100%
+api/loggers.py                              69      8    88%
+api/metrics.py                             167     25    85%
+api/middleware.py                           24      0   100%
+api/migrations/0001_initial.py               6      0   100%
+api/migrations/__init__.py                   0      0   100%
+api/models.py                               37      9    76%
+api/o_auth_start.py                         21      1    95%
+api/serializer.py                           17      9    47%
+api/services.py                            123      9    93%
+api/states.py                              217     10    95%
+api/tests/__init__.py                        0      0   100%
+api/tests/test_builder.py                  155      5    97%
+api/tests/test_logger.py                    32      1    97%
+api/tests/test_login.py                     22      0   100%
+api/tests/test_logout.py                    19      0   100%
+api/tests/test_metrics.py                   27      1    96%
+api/tests/test_oauth.py                     22      0   100%
+api/tests/test_password_reset.py            26      0   100%
+api/tests/test_register.py                  73      0   100%
+api/tests/test_services.py                 113      4    96%
+api/tests/test_states.py                   128      7    95%
+api/tests/test_third_party_login.py         35      0   100%
+api/tests/test_third_party_register.py      32      0   100%
+api/tests/test_validaters.py               165      0   100%
+api/tests/test_validation.py                25      0   100%
+api/tests/test_views.py                     90      0   100%
+api/tracers.py                               9      0   100%
+api/urls.py                                  7      1    86%
+api/utils.py                                40      5    88%
+api/validators.py                          151     12    92%
+api/views.py                               138     11    92%
+manage.py                                   11      2    82%
+------------------------------------------------------------
+TOTAL                                     2317    154    93%
